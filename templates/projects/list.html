@@ -1,0 +1,246 @@
+{% extends "base.html" %}
+{% block title %}Proyectos{% endblock %}
+{% block breadcrumb %}Proyectos{% endblock %}
+
+{% block topbar_actions %}
+  {% if can_edit() %}
+  <a href="{{ url_for('proyectos.nuevo') }}" class="btn btn-primary btn-sm">
+    <span class="material-icons-round">add</span> Nuevo Proyecto
+  </a>
+  {% endif %}
+  <a href="{{ url_for('reportes.exportar') }}{{ ('?' + request.query_string.decode()) if request.query_string else '' }}"
+     class="btn btn-secondary btn-sm">
+    <span class="material-icons-round">download</span> Exportar
+    {% if active_filter_count > 0 %}
+    <span style="background:var(--teal);color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;margin-left:2px;">{{ proyectos|length }}</span>
+    {% endif %}
+  </a>
+{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+  <div class="page-header-left">
+    <h1>Proyectos</h1>
+    <p>
+      <strong>{{ proyectos|length }}</strong> resultado{{ 's' if proyectos|length != 1 }}
+      {% if active_filter_count > 0 %}
+      &nbsp;·&nbsp;
+      <span style="color:var(--teal);font-weight:600;">{{ active_filter_count }} filtro{{ 's' if active_filter_count != 1 }} activo{{ 's' if active_filter_count != 1 }}</span>
+      {% endif %}
+    </p>
+  </div>
+  {% if is_admin() %}
+  <div class="page-header-actions">
+    <a href="{{ url_for('admin.filtros') }}" class="btn btn-secondary btn-sm">
+      <span class="material-icons-round">tune</span> Configurar filtros
+    </a>
+  </div>
+  {% endif %}
+</div>
+
+<!-- ── Formulario de filtros ───────────────────────────────────── -->
+<form method="get" id="filter-form">
+
+  <!-- Fila 1: búsqueda libre + programa (siempre visibles) -->
+  <div class="filter-bar" style="margin-bottom:0;border-radius:var(--radius) var(--radius) {% if filtros_activos or filtro_programa %}0 0{% else %}var(--radius) var(--radius){% endif %};">
+    <div class="form-group" style="flex:1;min-width:200px;">
+      <label class="form-label">Buscar</label>
+      <div style="position:relative;">
+        <span class="material-icons-round" style="position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:16px;color:var(--text-muted);">search</span>
+        <input name="q" value="{{ search }}" class="form-control" placeholder="Nombre, código, beneficiario…" style="padding-left:32px;">
+      </div>
+    </div>
+    <div class="form-group" style="min-width:180px;">
+      <label class="form-label">Programa</label>
+      <select name="programa_id" class="form-control" onchange="this.form.submit()">
+        <option value="">Todos los programas</option>
+        {% for p in programas %}
+        <option value="{{ p.id }}" {% if filtro_programa == p.id|string %}selected{% endif %}>{{ p.codigo }} — {{ p.nombre }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-group" style="align-self:flex-end;display:flex;gap:8px;">
+      <button type="submit" class="btn btn-primary">
+        <span class="material-icons-round">search</span> Filtrar
+      </button>
+      <a href="{{ url_for('proyectos.list') }}" class="btn btn-secondary" title="Limpiar todos los filtros">
+        <span class="material-icons-round">clear</span>
+      </a>
+    </div>
+  </div>
+
+  <!-- Fila 2: filtros dinámicos del programa -->
+  {% if filtros_activos %}
+  <div class="filter-bar" style="border-top:1px dashed var(--border);border-radius:0 0 var(--radius) var(--radius);background:var(--surface-2);padding-top:14px;padding-bottom:14px;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+
+    <div style="display:flex;align-items:center;gap:5px;color:var(--text-muted);font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding-bottom:1px;flex-shrink:0;">
+      <span class="material-icons-round" style="font-size:14px;">filter_list</span>Filtros avanzados
+    </div>
+
+    {% for f in filtros_activos %}
+    <div class="form-group" style="min-width:130px;flex:1;max-width:210px;">
+      <label class="form-label">{{ f.label }}</label>
+
+      {% if f.filter_type == 'select' %}
+        {% set opciones = filtros_con_opciones.get(f.field_key, []) %}
+        <select name="{{ f.field_key }}" class="form-control">
+          <option value="">Todos</option>
+          {% for opt in opciones %}
+          <option value="{{ opt }}" {% if current_filters.get(f.field_key) == opt|string %}selected{% endif %}>{{ opt }}</option>
+          {% endfor %}
+        </select>
+
+      {% elif f.filter_type == 'text' %}
+        <input type="text" name="{{ f.field_key }}"
+               value="{{ current_filters.get(f.field_key, '') }}"
+               class="form-control" placeholder="Buscar…">
+
+      {% elif f.filter_type == 'boolean' %}
+        <select name="{{ f.field_key }}" class="form-control">
+          <option value="">Todos</option>
+          <option value="1" {% if current_filters.get(f.field_key) %}selected{% endif %}>Con {{ f.label|lower }}</option>
+        </select>
+      {% endif %}
+    </div>
+    {% endfor %}
+
+    <!-- Chips de filtros activos -->
+    {% set applied_filters = [] %}
+    {% for f in filtros_activos %}{% if current_filters.get(f.field_key) %}{% set _ = applied_filters.append(f) %}{% endif %}{% endfor %}
+    {% if applied_filters %}
+    <div style="align-self:flex-end;padding-bottom:2px;display:flex;gap:6px;flex-wrap:wrap;max-width:100%;">
+      {% for f in applied_filters %}
+      <span style="display:inline-flex;align-items:center;gap:5px;background:var(--teal-pale);color:var(--teal-dark);border:1px solid var(--teal);border-radius:20px;padding:3px 10px;font-size:11px;font-weight:600;">
+        <span class="material-icons-round" style="font-size:12px;">filter_alt</span>
+        {{ f.label }}: <strong>{{ current_filters.get(f.field_key) }}</strong>
+      </span>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+  </div>
+
+  {% elif filtro_programa %}
+  <!-- Programa seleccionado pero sin filtros habilitados -->
+  <div style="background:var(--surface-2);border:1px solid var(--border);border-top:1px dashed var(--border);border-radius:0 0 var(--radius) var(--radius);padding:10px 18px;display:flex;align-items:center;gap:8px;">
+    <span class="material-icons-round" style="font-size:15px;color:var(--text-muted);">info</span>
+    <span class="text-sm text-muted">Este programa no tiene filtros configurados.</span>
+    {% if is_admin() %}
+    <a href="{{ url_for('admin.filtros') }}" class="text-sm" style="color:var(--teal);font-weight:600;margin-left:4px;">Configurar →</a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+</form>
+
+<!-- ── Tabla de resultados ──────────────────────────────────────── -->
+{% if proyectos %}
+<div class="card" style="margin-top:16px;">
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Proyecto / Empresa</th>
+          <th>Programa</th>
+          {% if not filtro_programa %}<th>Beneficiario</th>{% endif %}
+          {% if filtro_programa %}
+            {% for f in filtros_activos %}
+              {% if f.field_key in ('beneficiario','municipio','linea','anio','seccion','uvt','especialista','situacion_clinica','rubro','anio_aprobacion') and not current_filters.get(f.field_key) %}
+              <th>{{ f.label }}</th>
+              {% endif %}
+            {% endfor %}
+          {% else %}
+          <th>Municipio</th>
+          {% endif %}
+          <th>ANR / Monto</th>
+          <th>Avance</th>
+          <th>Estado</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set estado_labels = {
+          'activo':'En ejecución','finalizado':'Finalizado',
+          'en_finalizacion':'Finalizando','suspendido':'Rescindido','en_evaluacion':'Evaluación'
+        } %}
+        {% for p in proyectos %}
+        <tr>
+          <td style="max-width:240px;">
+            <a href="{{ url_for('proyectos.detail', pid=p.id) }}"
+               style="font-weight:600;color:var(--teal);text-decoration:none;font-size:13px;">
+              {{ p.nombre[:60] }}{% if p.nombre|length > 60 %}…{% endif %}
+            </a>
+            {% if p.codigo %}<div class="mono text-muted" style="font-size:11px;margin-top:1px;">{{ p.codigo }}</div>{% endif %}
+            {% if p.linea or p.anio %}
+            <div style="display:flex;gap:4px;margin-top:3px;flex-wrap:wrap;">
+              {% if p.linea %}<span style="background:var(--teal-pale);color:var(--teal-dark);padding:1px 5px;border-radius:3px;font-size:10px;font-weight:700;">L{{ p.linea }}</span>{% endif %}
+              {% if p.anio %}<span style="background:var(--surface-2);color:var(--text-muted);padding:1px 5px;border-radius:3px;font-size:10px;">{{ p.anio }}</span>{% endif %}
+            </div>
+            {% endif %}
+          </td>
+          <td><span class="tag" style="font-size:11px;font-weight:700;">{{ p.programa_codigo }}</span></td>
+
+          {% if not filtro_programa %}
+          <td class="text-sm" style="max-width:140px;">{{ p.beneficiario or '—' }}</td>
+          {% endif %}
+
+          {% if filtro_programa %}
+            {% for f in filtros_activos %}
+              {% if f.field_key in ('beneficiario','municipio','linea','anio','seccion','uvt','especialista','situacion_clinica','rubro','anio_aprobacion') and not current_filters.get(f.field_key) %}
+              <td class="text-sm" style="max-width:130px;">{{ p[f.field_key] or '—' }}</td>
+              {% endif %}
+            {% endfor %}
+          {% else %}
+          <td class="text-sm">{{ p.municipio or '—' }}</td>
+          {% endif %}
+
+          <td class="mono text-sm">
+            {% set monto = p.anr_monto or p.monto_diagnostico or 0 %}
+            {% if monto > 0 %}${{ "%.0f"|format(monto/1000) }}K{% else %}—{% endif %}
+          </td>
+          <td style="min-width:80px;">
+            <div class="progress-bar" style="margin-bottom:3px;">
+              <div class="progress-fill" style="width:{{ p.porcentaje_avance or 0 }}%;"></div>
+            </div>
+            <div class="text-sm text-muted">{{ p.porcentaje_avance or 0 }}%</div>
+          </td>
+          <td><span class="badge badge-{{ p.estado }}">{{ estado_labels.get(p.estado, p.estado|replace('_',' ')) }}</span></td>
+          <td>
+            <div class="flex gap-1">
+              <a href="{{ url_for('proyectos.detail', pid=p.id) }}" class="btn btn-secondary btn-sm btn-icon" title="Ver detalle">
+                <span class="material-icons-round">visibility</span>
+              </a>
+              {% if can_edit() %}
+              <a href="{{ url_for('proyectos.editar', pid=p.id) }}" class="btn btn-secondary btn-sm btn-icon" title="Editar">
+                <span class="material-icons-round">edit</span>
+              </a>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div style="padding:10px 18px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+    <span class="text-sm text-muted">{{ proyectos|length }} resultado{{ 's' if proyectos|length != 1 }}</span>
+    <a href="{{ url_for('reportes.exportar') }}{{ ('?' + request.query_string.decode()) if request.query_string else '' }}"
+       class="btn btn-secondary btn-sm">
+      <span class="material-icons-round">download</span> Descargar Excel con estos filtros
+    </a>
+  </div>
+</div>
+
+{% else %}
+<div class="card" style="margin-top:16px;text-align:center;padding:60px 30px;">
+  <span class="material-icons-round" style="font-size:48px;color:var(--text-muted);display:block;margin-bottom:14px;">search_off</span>
+  <h3 style="margin-bottom:8px;">Sin resultados</h3>
+  <p class="text-muted" style="margin-bottom:20px;">No se encontraron proyectos con los filtros seleccionados.</p>
+  <a href="{{ url_for('proyectos.list') }}{% if filtro_programa %}?programa_id={{ filtro_programa }}{% endif %}" class="btn btn-secondary">
+    <span class="material-icons-round">clear</span> Limpiar filtros
+  </a>
+</div>
+{% endif %}
+
+{% endblock %}

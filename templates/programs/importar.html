@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}Importar Excel{% endblock %}
+{% block breadcrumb %}Importar datos{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div class="page-header-left">
+    <h1>Importar desde Excel</h1>
+    <p>Cargá proyectos masivamente desde planillas Excel.</p>
+  </div>
+</div>
+
+<div class="grid-2" style="align-items:start;">
+  <div>
+    <div class="card mb-3">
+      <div class="card-header"><span class="card-title">Subir archivo</span></div>
+      <form method="post" enctype="multipart/form-data" class="card-body">
+        <div class="form-group mb-3">
+          <label class="form-label">Programa</label>
+          <select name="programa_id" class="form-control" required>
+            <option value="">Seleccioná el programa</option>
+            {% for p in programas %}
+            <option value="{{ p.id }}">{{ p.codigo }} — {{ p.nombre }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group mb-3">
+          <label class="form-label">Archivo Excel (.xlsx)</label>
+          <div class="upload-zone" onclick="document.getElementById('file-input').click()">
+            <input type="file" id="file-input" name="archivo" accept=".xlsx,.xls" style="display:none;" onchange="document.querySelector('.upload-filename').textContent = this.files[0]?.name || 'Ningún archivo seleccionado'">
+            <span class="material-icons-round">cloud_upload</span>
+            <p style="font-weight:600;margin-bottom:4px;">Arrastrá o hacé click para subir</p>
+            <p class="text-sm text-muted upload-filename">Ningún archivo seleccionado</p>
+            <p class="text-sm text-muted mt-1">Formatos aceptados: .xlsx, .xls</p>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary">
+          <span class="material-icons-round">upload</span> Importar
+        </button>
+      </form>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><span class="card-title">Descargar plantillas</span></div>
+      <div class="card-body">
+        <p class="text-sm text-muted mb-2">Descargá la plantilla correspondiente al programa para cargar los datos.</p>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          {% for p in programas %}
+          <a href="{{ url_for('importacion.plantilla', prog_id=p.id) }}" class="btn btn-secondary" style="justify-content:space-between;">
+            <div class="flex items-center gap-1">
+              <span class="tag" style="background:{{ p.color }}22;border-color:{{ p.color }}44;color:{{ p.color }};">{{ p.codigo }}</span>
+              <span>Plantilla {{ p.nombre }}</span>
+            </div>
+            <span class="material-icons-round">download</span>
+          </a>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="card mb-3">
+      <div class="card-header"><span class="card-title">Instrucciones de carga</span></div>
+      <div class="card-body">
+        <div style="display:flex;flex-direction:column;gap:14px;">
+          <div class="flex gap-2">
+            <div style="width:28px;height:28px;background:var(--blue);border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;font-weight:700;flex-shrink:0;">1</div>
+            <div><strong>Descargá la plantilla</strong> del programa correspondiente. Cada programa tiene sus propios hitos.</div>
+          </div>
+          <div class="flex gap-2">
+            <div style="width:28px;height:28px;background:var(--blue);border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;font-weight:700;flex-shrink:0;">2</div>
+            <div><strong>Completá los datos</strong>: nombre, beneficiario, adoptante, ANR, municipio, etc. Las columnas de hitos aceptan: <code style="background:#f0f0f0;padding:1px 4px;border-radius:3px;">completado</code>, <code style="background:#f0f0f0;padding:1px 4px;border-radius:3px;">en_proceso</code>, o dejá vacío para pendiente.</div>
+          </div>
+          <div class="flex gap-2">
+            <div style="width:28px;height:28px;background:var(--blue);border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;font-weight:700;flex-shrink:0;">3</div>
+            <div><strong>Subí el archivo</strong> seleccionando el programa correcto. El sistema creará los proyectos y sus avances automáticamente.</div>
+          </div>
+        </div>
+        <div style="background:var(--gold-light);border:1px solid var(--gold);border-radius:6px;padding:12px;margin-top:14px;">
+          <strong style="font-size:13px;">⚠ Importante:</strong>
+          <p class="text-sm mt-1">La importación crea nuevos proyectos — no actualiza existentes. Verificá que no haya duplicados antes de importar.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><span class="card-title">Historial de importaciones</span></div>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Programa</th>
+              <th>Archivo</th>
+              <th>Importados</th>
+              <th>Errores</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for imp in historial %}
+            <tr>
+              <td class="text-sm text-muted">{{ imp.created_at[:16] }}</td>
+              <td><span class="tag">{{ imp.programa_nombre or '—' }}</span></td>
+              <td class="text-sm mono">{{ imp.filename or '—' }}</td>
+              <td><span class="badge badge-completado">{{ imp.registros_importados }}</span></td>
+              <td>{% if imp.registros_error > 0 %}<span class="badge badge-suspendido">{{ imp.registros_error }}</span>{% else %}<span class="text-muted text-sm">0</span>{% endif %}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" class="text-muted text-sm" style="padding:20px;text-align:center;">Sin importaciones anteriores.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

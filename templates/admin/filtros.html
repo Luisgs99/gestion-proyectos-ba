@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+{% block title %}Configurar filtros{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('dashboard.dashboard') }}" style="color:var(--text-muted);text-decoration:none;">Inicio</a>
+  / Configurar filtros
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div class="page-header-left">
+    <h1>Configuración de filtros</h1>
+    <p>Activá o desactivá los filtros disponibles en cada programa. Solo los filtros activos aparecerán en la búsqueda y el export.</p>
+  </div>
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for category, message in messages %}
+  <div class="alert alert-{{ category }}" style="margin-bottom:16px;">
+    <span class="material-icons-round">{{ 'check_circle' if category == 'success' else 'error' }}</span>
+    {{ message }}
+    <button class="alert-close" onclick="this.parentElement.remove()">✕</button>
+  </div>
+  {% endfor %}
+{% endwith %}
+
+<!-- Una card por programa -->
+{% for programa in programas %}
+{% set filtros = filtros_por_prog[programa.id] %}
+<div class="card mb-3" id="card-prog-{{ programa.id }}">
+  <div class="card-header">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <div style="width:10px;height:10px;border-radius:50%;background:var(--teal);"></div>
+      <span class="card-title">{{ programa.nombre }}</span>
+      <span class="text-sm text-muted">{{ programa.codigo }}</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span class="text-sm text-muted">
+        {{ filtros|selectattr('enabled')|list|length }} de {{ filtros|length }} activos
+      </span>
+      <button class="btn btn-primary btn-sm" onclick="guardarFiltros({{ programa.id }})">
+        <span class="material-icons-round">save</span> Guardar
+      </button>
+    </div>
+  </div>
+
+  {% if filtros %}
+  <div class="card-body" style="padding:12px 16px;">
+    <p class="text-sm text-muted" style="margin-bottom:12px;">
+      <span class="material-icons-round" style="font-size:14px;vertical-align:middle;">drag_indicator</span>
+      Arrastrá para reordenar. Activá o desactivá con el toggle.
+    </p>
+
+    <div class="filtros-sortable" id="sortable-{{ programa.id }}" style="display:flex;flex-direction:column;gap:6px;">
+      {% for f in filtros|sort(attribute='orden') %}
+      <div class="filtro-item {{ 'filtro-enabled' if f.enabled else 'filtro-disabled' }}"
+           data-field="{{ f.field_key }}"
+           data-prog="{{ programa.id }}"
+           draggable="true"
+           style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:{{ 'var(--surface)' if f.enabled else 'var(--surface-2)' }};border:1.5px solid {{ 'var(--teal)' if f.enabled else 'var(--border)' }};border-radius:8px;cursor:grab;transition:all .15s;user-select:none;">
+
+        <!-- drag handle -->
+        <span class="material-icons-round" style="color:var(--text-muted);font-size:18px;cursor:grab;">drag_indicator</span>
+
+        <!-- toggle -->
+        <label class="toggle-switch" style="flex-shrink:0;" title="{{ 'Desactivar' if f.enabled else 'Activar' }} filtro">
+          <input type="checkbox" class="filtro-toggle"
+                 data-prog="{{ programa.id }}" data-field="{{ f.field_key }}"
+                 {{ 'checked' if f.enabled }}>
+          <span class="toggle-slider"></span>
+        </label>
+
+        <!-- info -->
+        <div style="flex:1;">
+          <span style="font-weight:600;font-size:13.5px;{{ 'color:var(--text)' if f.enabled else 'color:var(--text-muted)' }};">
+            {{ f.label }}
+          </span>
+          <span style="margin-left:8px;font-size:11px;color:var(--text-muted);font-family:'Roboto Mono',monospace;">{{ f.field_key }}</span>
+        </div>
+
+        <!-- tipo badge -->
+        <span style="font-size:11px;padding:2px 8px;border-radius:4px;font-weight:600;
+          background:{{ 'var(--teal-pale)' if f.filter_type=='select' else ('var(--green-pale)' if f.filter_type=='boolean' else 'var(--surface-2)') }};
+          color:{{ 'var(--teal)' if f.filter_type=='select' else ('var(--green)' if f.filter_type=='boolean' else 'var(--text-muted)') }};">
+          {{ {'select': 'Lista', 'text': 'Texto libre', 'boolean': 'Sí / No'}.get(f.filter_type, f.filter_type) }}
+        </span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% else %}
+  <div class="card-body">
+    <p class="text-sm text-muted">No hay filtros configurados para este programa.</p>
+  </div>
+  {% endif %}
+</div>
+{% endfor %}
+
+{% endblock %}
+
+{% block scripts %}
+<style>
+/* ── Toggle switch ── */
+.toggle-switch { position:relative;display:inline-block;width:36px;height:20px; }
+.toggle-switch input { opacity:0;width:0;height:0; }
+.toggle-slider {
+  position:absolute;cursor:pointer;inset:0;
+  background:#ccc;border-radius:20px;transition:.2s;
+}
+.toggle-slider::before {
+  content:'';position:absolute;height:14px;width:14px;
+  left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.2s;
+}
+.toggle-switch input:checked + .toggle-slider { background:var(--teal); }
+.toggle-switch input:checked + .toggle-slider::before { transform:translateX(16px); }
+
+/* ── Drag states ── */
+.filtro-item.drag-over { border-color:var(--teal)!important;box-shadow:0 0 0 2px rgba(0,174,195,.2); }
+.filtro-item.dragging { opacity:.4; }
+</style>
+
+<script>
+/* ── Drag-and-drop sorting ── */
+function initSortable(progId) {
+  const container = document.getElementById(`sortable-${progId}`);
+  let dragEl = null;
+
+  container.addEventListener('dragstart', e => {
+    dragEl = e.target.closest('.filtro-item');
+    if (dragEl) { setTimeout(() => dragEl.classList.add('dragging'), 0); }
+  });
+  container.addEventListener('dragend', e => {
+    document.querySelectorAll('.filtro-item').forEach(el => {
+      el.classList.remove('dragging','drag-over');
+    });
+  });
+  container.addEventListener('dragover', e => {
+    e.preventDefault();
+    const target = e.target.closest('.filtro-item');
+    if (target && target !== dragEl) {
+      document.querySelectorAll('.filtro-item').forEach(el => el.classList.remove('drag-over'));
+      target.classList.add('drag-over');
+      const rect = target.getBoundingClientRect();
+      const next = e.clientY > rect.top + rect.height / 2 ? target.nextSibling : target;
+      container.insertBefore(dragEl, next);
+    }
+  });
+  container.addEventListener('dragleave', e => {
+    const target = e.target.closest('.filtro-item');
+    if (target) target.classList.remove('drag-over');
+  });
+  container.addEventListener('drop', e => {
+    e.preventDefault();
+    document.querySelectorAll('.filtro-item').forEach(el => el.classList.remove('drag-over','dragging'));
+  });
+}
+
+/* ── Toggle visual feedback ── */
+document.querySelectorAll('.filtro-toggle').forEach(cb => {
+  cb.addEventListener('change', function() {
+    const item = this.closest('.filtro-item');
+    if (this.checked) {
+      item.style.background = 'var(--surface)';
+      item.style.borderColor = 'var(--teal)';
+      item.classList.add('filtro-enabled');
+      item.classList.remove('filtro-disabled');
+      item.querySelector('span[style*="font-weight"]').style.color = 'var(--text)';
+    } else {
+      item.style.background = 'var(--surface-2)';
+      item.style.borderColor = 'var(--border)';
+      item.classList.remove('filtro-enabled');
+      item.classList.add('filtro-disabled');
+      item.querySelector('span[style*="font-weight"]').style.color = 'var(--text-muted)';
+    }
+  });
+});
+
+/* ── Save ── */
+function guardarFiltros(progId) {
+  const container = document.getElementById(`sortable-${progId}`);
+  const items = container.querySelectorAll('.filtro-item');
+  const enabledFields = [];
+
+  items.forEach(item => {
+    const cb = item.querySelector('.filtro-toggle');
+    if (cb && cb.checked) {
+      enabledFields.push(item.dataset.field);
+    }
+  });
+
+  const form = document.createElement('form');
+  form.method = 'POST';
+  form.action = `/admin/filtros/${progId}`;
+
+  const input = document.createElement('input');
+  input.type = 'hidden';
+  input.name = 'orden_json';
+  input.value = JSON.stringify(enabledFields);
+  form.appendChild(input);
+
+  document.body.appendChild(form);
+  form.submit();
+}
+
+/* ── Init drag for all programs ── */
+{% for programa in programas %}
+initSortable({{ programa.id }});
+{% endfor %}
+</script>
+{% endblock %}

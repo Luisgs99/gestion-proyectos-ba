@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ingresar — Gestión de Proyectos · SCTeI · PBA</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Encode+Sans:wght@300;400;600;700;800&family=Roboto:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Roboto',sans-serif;min-height:100vh;display:flex;background:#1E325C;}
+
+.login-split{display:flex;width:100%;min-height:100vh;}
+
+/* ── Panel izquierdo: color institucional GBA ── */
+.login-left{
+  flex:1;
+  background: linear-gradient(140deg, #1E325C 0%, #2B4470 40%, #00AEC3 100%);
+  display:flex;flex-direction:column;justify-content:space-between;padding:48px 60px;
+  position:relative;overflow:hidden;
+}
+.login-left::before{
+  content:'';position:absolute;top:-120px;right:-80px;
+  width:420px;height:420px;border-radius:50%;
+  background:rgba(0,174,195,.12);
+}
+.login-left::after{
+  content:'';position:absolute;bottom:-100px;left:-60px;
+  width:320px;height:320px;border-radius:50%;
+  background:rgba(255,255,255,.05);
+}
+
+/* Logo GBA oficial en el panel izquierdo */
+.login-brand{display:flex;align-items:center;gap:16px;position:relative;z-index:1;}
+.brand-gba-svg{flex-shrink:0;}
+.brand-gba-text{}
+.brand-gba-name{
+  font-family:'Encode Sans',sans-serif;font-weight:800;
+  color:#fff;font-size:22px;letter-spacing:-.02em;display:block;
+}
+.brand-gba-sub{
+  font-size:11px;color:rgba(255,255,255,.55);
+  text-transform:uppercase;letter-spacing:.1em;display:block;margin-top:2px;
+}
+.brand-gba-line{
+  width:1px;height:36px;background:rgba(255,255,255,.25);margin:0 4px;flex-shrink:0;
+}
+.brand-gba-dep{
+  font-size:12px;color:rgba(255,255,255,.7);line-height:1.4;max-width:200px;
+}
+
+.login-hero{position:relative;z-index:1;flex:1;display:flex;flex-direction:column;justify-content:center;padding:40px 0;}
+.login-hero h1{
+  font-family:'Encode Sans',sans-serif;font-size:34px;font-weight:800;
+  color:#fff;line-height:1.15;margin-bottom:16px;letter-spacing:-.02em;
+}
+.login-hero h1 span{color:#74C9E3;}
+.login-hero p{color:rgba(255,255,255,.65);font-size:14.5px;line-height:1.75;max-width:360px;}
+
+.login-programs{display:flex;gap:8px;margin-top:28px;flex-wrap:wrap;}
+.prog-tag{
+  background:rgba(0,174,195,.25);color:#fff;
+  padding:5px 13px;border-radius:20px;font-size:11.5px;font-weight:600;
+  border:1px solid rgba(0,174,195,.4);
+}
+
+.login-footer-left{position:relative;z-index:1;}
+.login-footer-left p{font-size:11px;color:rgba(255,255,255,.35);line-height:1.6;}
+
+/* ── Panel derecho: formulario ── */
+.login-right{
+  width:460px;background:#fff;display:flex;flex-direction:column;
+  justify-content:center;padding:60px 50px;
+}
+
+/* Escudo / badge SCTeI en el panel derecho */
+.login-badge{
+  display:flex;align-items:center;gap:12px;
+  padding:14px 16px;
+  background:#F3F7F8;
+  border:1px solid #D8E4E7;
+  border-radius:10px;
+  margin-bottom:28px;
+}
+.login-badge-icon{
+  width:40px;height:40px;border-radius:8px;background:#00AEC3;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+}
+.login-badge-text p:first-child{font-family:'Encode Sans',sans-serif;font-weight:700;font-size:13px;color:#1E325C;}
+.login-badge-text p:last-child{font-size:11px;color:#6E8A96;margin-top:1px;}
+
+.login-title{font-family:'Encode Sans',sans-serif;font-size:26px;font-weight:800;color:#1E325C;margin-bottom:4px;}
+.login-sub{color:#6E8A96;font-size:13.5px;margin-bottom:30px;}
+
+.form-group{margin-bottom:18px;}
+.form-label{font-size:11.5px;font-weight:600;color:#3A5060;text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:6px;}
+.form-control{
+  width:100%;padding:11px 14px;
+  border:1.5px solid #D8E4E7;border-radius:8px;
+  font-size:14px;font-family:'Roboto',sans-serif;color:#0D1B2A;
+  outline:none;transition:border-color .15s,box-shadow .15s;
+}
+.form-control:focus{border-color:#00AEC3;box-shadow:0 0 0 3px rgba(0,174,195,.15);}
+
+.btn-login{
+  width:100%;padding:13px;
+  background:#00AEC3;color:#fff;border:none;border-radius:8px;
+  font-family:'Encode Sans',sans-serif;font-size:14px;font-weight:700;
+  cursor:pointer;transition:background .15s,box-shadow .15s;margin-top:4px;
+  letter-spacing:.02em;
+}
+.btn-login:hover{background:#007F8F;box-shadow:0 4px 14px rgba(0,174,195,.35);}
+
+.alert-danger{
+  background:#FFEBEE;color:#7f0000;border:1px solid #FFCDD2;
+  padding:11px 14px;border-radius:8px;margin-bottom:18px;
+  font-size:13px;display:flex;align-items:center;gap:8px;
+}
+
+.login-footer-right{
+  margin-top:32px;padding-top:18px;
+  border-top:1px solid #EEF1F5;
+  font-size:11px;color:#6E8A96;text-align:center;line-height:1.6;
+}
+
+.hint-box{background:#F3F7F8;border:1px solid #D8E4E7;border-radius:8px;padding:14px;margin-top:20px;}
+.hint-box p{font-size:11.5px;color:#6E8A96;margin-bottom:8px;font-weight:600;}
+.hint-row{display:flex;justify-content:space-between;font-size:11.5px;padding:3px 0;border-bottom:1px solid #EEF1F5;}
+.hint-row:last-child{border-bottom:none;}
+.hint-key{color:#3A5060;font-weight:500;}
+.hint-val{font-family:monospace;color:#00AEC3;}
+
+@media(max-width:800px){
+  .login-left{display:none;}
+  .login-right{width:100%;padding:40px 24px;}
+}
+</style>
+</head>
+<body>
+<div class="login-split">
+
+  <!-- ── Panel izquierdo ── -->
+  <div class="login-left">
+    <div class="login-brand">
+      <!-- Isotipo Buenos Aires (representación SVG fiel al manual) -->
+      <div class="brand-gba-svg">
+        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect width="52" height="52" rx="12" fill="rgba(255,255,255,0.15)"/>
+          <!-- Silueta estilizada BA Province -->
+          <path d="M10 12 L42 12 L42 20 L36 20 L36 26 L42 26 L42 40 L30 40 L24 34 L18 40 L10 40 L10 30 L16 24 L10 18 Z"
+                fill="white" opacity="0.9"/>
+        </svg>
+      </div>
+      <div class="brand-gba-line"></div>
+      <div class="brand-gba-dep">
+        Subsecretaría de Ciencia,<br>Tecnología e Innovación
+      </div>
+    </div>
+
+    <div class="login-hero">
+      <h1>Gestión de<br><span>Proyectos de</span><br>Innovación</h1>
+      <p>Plataforma para la gestión de proyectos de innovación de la Subsecretaría de Ciencia, Tecnología e Innovación. Ministerio de Producción, Ciencia e Innovación Tecnológica — Provincia de Buenos Aires.</p>
+      <div class="login-programs">
+        <span class="prog-tag">FITBA</span>
+        <span class="prog-tag">ORBITA</span>
+        <span class="prog-tag">CLIC</span>
+        <span class="prog-tag">Clínica Tecnológica</span>
+        <span class="prog-tag">FONICS</span>
+      </div>
+    </div>
+
+    <div class="login-footer-left">
+      <p>Ministerio de Producción, Ciencia e Innovación Tecnológica<br>Gobierno de la Provincia de Buenos Aires</p>
+    </div>
+  </div>
+
+  <!-- ── Panel derecho ── -->
+  <div class="login-right">
+
+    <div class="login-badge">
+      <div class="login-badge-icon">
+        <span class="material-icons-round" style="color:#fff;font-size:20px;">science</span>
+      </div>
+      <div class="login-badge-text">
+        <p>Subsecretaría de Ciencia, Tecnología e Innovación</p>
+        <p>Ministerio de Producción, Ciencia e Innovación Tecnológica · PBA</p>
+      </div>
+    </div>
+
+    <h2 class="login-title">Bienvenido</h2>
+    <p class="login-sub">Ingresá con tus credenciales institucionales</p>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}
+      <div class="alert-{{ category }}">
+        <span class="material-icons-round" style="font-size:16px">error</span>
+        {{ message }}
+      </div>
+      {% endfor %}
+    {% endwith %}
+
+    <form method="post">
+      <div class="form-group">
+        <label class="form-label">Correo electrónico</label>
+        <input type="email" name="email" class="form-control" placeholder="usuario@gba.gov.ar" required autofocus>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Contraseña</label>
+        <input type="password" name="password" class="form-control" placeholder="••••••••" required>
+      </div>
+      <button type="submit" class="btn-login">Ingresar →</button>
+    </form>
+
+    <div class="hint-box">
+      <p>Usuarios de demo:</p>
+      <div class="hint-row"><span class="hint-key">Admin</span><span class="hint-val">admin@subsecretaria.gba.gov.ar / admin123</span></div>
+      <div class="hint-row"><span class="hint-key">Subsecretario</span><span class="hint-val">subsecretario@gba.gov.ar / subsec123</span></div>
+      <div class="hint-row"><span class="hint-key">Agente</span><span class="hint-val">agente@gba.gov.ar / agente123</span></div>
+    </div>
+
+    <div class="login-footer-right">
+      Subsecretaría de Ciencia, Tecnología e Innovación<br>
+      Ministerio de Producción, Ciencia e Innovación Tecnológica · PBA
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

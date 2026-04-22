@@ -1,0 +1,976 @@
+{% extends "base.html" %}
+{% block title %}Reportes{% endblock %}
+{% block breadcrumb %}Reportes{% endblock %}
+
+{% block content %}
+<div class="page-header no-print">
+  <div class="page-header-left">
+    <h1>Reportes y Análisis</h1>
+    <p>Exportá datos con filtros avanzados o generá informes visuales listos para presentar.</p>
+  </div>
+</div>
+
+<!-- Tabs -->
+<div class="tabs-container no-print">
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="exportar">
+      <span class="material-icons-round" style="font-size:16px;vertical-align:-3px;">download</span>
+      Exportar datos
+    </button>
+    <button class="tab-btn" data-tab="informe">
+      <span class="material-icons-round" style="font-size:16px;vertical-align:-3px;">assessment</span>
+      Informe ejecutivo
+    </button>
+    <button class="tab-btn" data-tab="analisis">
+      <span class="material-icons-round" style="font-size:16px;vertical-align:-3px;">bar_chart</span>
+      Análisis por dimensión
+    </button>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       TAB 1 — EXPORTAR DATOS
+  ══════════════════════════════════════════════════════════════════════ -->
+  <div class="tab-content active" data-tab-content="exportar">
+    <form method="get" action="{{ url_for('reportes.exportar') }}" id="export-form">
+
+      <!-- Selector de programa -->
+      <div class="card mb-3">
+        <div class="card-header" style="justify-content:space-between;">
+          <span class="card-title">Programa</span>
+          <span id="export-count" class="text-sm text-muted"></span>
+        </div>
+        <div class="card-body" style="padding:16px 20px;">
+          <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+            <select name="programa_id" id="exp-programa" class="form-control" style="max-width:320px;"
+                    onchange="loadExportConfig(this.value)">
+              <option value="">Todos los programas</option>
+              {% for p in programas %}
+              <option value="{{ p.id }}" style="color:{{ p.color }};">{{ p.codigo }} — {{ p.nombre }}</option>
+              {% endfor %}
+            </select>
+            <div id="exp-loading" style="display:none;color:var(--text-muted);font-size:13px;">
+              <span class="material-icons-round" style="font-size:15px;vertical-align:-3px;">sync</span>
+              Cargando opciones…
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 300px;gap:16px;align-items:start;">
+
+        <!-- Panel izquierdo: FILTROS -->
+        <div>
+          <div class="card mb-3">
+            <div class="card-header">
+              <span class="card-title">Filtros</span>
+              <button type="button" class="btn btn-secondary btn-sm"
+                      onclick="clearFilters()" style="font-size:12px;">
+                Limpiar todo
+              </button>
+            </div>
+            <div class="card-body" id="exp-filters-panel" style="padding:16px 20px;">
+              <!-- Siempre visible: estado -->
+              <div class="filter-section">
+                <div class="filter-section-title">Estado</div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;">
+                  {% for est, lbl in [('activo','Activo'),('finalizado','Finalizado'),('suspendido','Suspendido'),('en_evaluacion','En evaluación')] %}
+                  <label class="check-chip">
+                    <input type="checkbox" name="f_estado" value="{{ est }}"
+                           onchange="handleEstadoMulti(this)">
+                    <span class="badge badge-{{ est }}">{{ lbl }}</span>
+                  </label>
+                  {% endfor %}
+                </div>
+                <!-- Hidden single-value field for the GET param -->
+                <input type="hidden" name="f_estado" id="f_estado_val" value="">
+              </div>
+              <!-- Filtros dinámicos del programa (se inyectan via JS) -->
+              <div id="exp-dynamic-filters"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Panel derecho: COLUMNAS -->
+        <div>
+          <div class="card" style="position:sticky;top:80px;">
+            <div class="card-header" style="justify-content:space-between;">
+              <span class="card-title">Columnas a exportar</span>
+            </div>
+            <div id="exp-cols-panel" class="card-body" style="padding:12px 16px;max-height:420px;overflow-y:auto;">
+              <p class="text-muted text-sm">Seleccioná un programa para ver las columnas disponibles.</p>
+            </div>
+            <div style="padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:8px;">
+              <button type="button" class="btn btn-secondary btn-sm" style="flex:1;"
+                      onclick="toggleAllCols(true)">Seleccionar todo</button>
+              <button type="button" class="btn btn-secondary btn-sm" style="flex:1;"
+                      onclick="toggleAllCols(false)">Limpiar</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Botón exportar -->
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+        <button type="submit" class="btn btn-primary">
+          <span class="material-icons-round">download</span> Exportar Excel
+        </button>
+        <a href="{{ url_for('reportes.exportar') }}" class="btn btn-secondary">
+          Exportar todo (sin filtros)
+        </a>
+        <a href="{{ url_for('reportes.ipc') }}" class="btn btn-secondary">
+          <span class="material-icons-round">trending_up</span> Herramienta IPC
+        </a>
+      </div>
+    </form>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       TAB 2 — INFORME EJECUTIVO
+  ══════════════════════════════════════════════════════════════════════ -->
+  <div class="tab-content" data-tab-content="informe">
+
+    <!-- Filtros del informe -->
+    <div class="card mb-3 no-print">
+      <div class="card-body" style="padding:14px 20px;">
+        <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">Programas</label>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;">
+              {% for p in programas %}
+              <label class="check-chip">
+                <input type="checkbox" class="inf-prog" value="{{ p.id }}" checked>
+                <span class="tag" style="background:{{ p.color }}22;border-color:{{ p.color }}44;color:{{ p.color }};">{{ p.codigo }}</span>
+              </label>
+              {% endfor %}
+            </div>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">Año desde</label>
+            <input type="number" id="inf-anio-desde" class="form-control" style="width:90px;" placeholder="2019">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">Año hasta</label>
+            <input type="number" id="inf-anio-hasta" class="form-control" style="width:90px;" placeholder="{{ 2026 }}">
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">Estado</label>
+            <select id="inf-estado" class="form-control" style="width:160px;">
+              <option value="">Todos</option>
+              <option value="activo">Activos</option>
+              <option value="finalizado">Finalizados</option>
+              <option value="suspendido">Suspendidos</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">Municipio</label>
+            <select id="inf-municipio" class="form-control" style="width:190px;">
+              <option value="">Todos</option>
+              {% for m in municipios %}
+              <option value="{{ m }}">{{ m }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">Institución beneficiaria</label>
+            <select id="inf-ib2" class="form-control" style="width:190px;">
+              <option value="">Todas</option>
+              {% for ib in instituciones %}
+              <option value="{{ ib }}">{{ ib }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <button type="button" class="btn btn-primary" onclick="generarInforme()">
+            <span class="material-icons-round">refresh</span> Generar
+          </button>
+          <button type="button" class="btn btn-secondary" onclick="window.print()">
+            <span class="material-icons-round">print</span> Imprimir / PDF
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Contenido del informe (visible en pantalla y al imprimir) -->
+    <div id="informe-body" style="display:none;">
+
+      <!-- Header imprimible -->
+      <div class="print-header" style="margin-bottom:20px;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+          <div>
+            <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;">
+              Subsecretaría de Ciencia, Tecnología e Innovación · Provincia de Buenos Aires
+            </div>
+            <h2 style="font-family:'Encode Sans',sans-serif;font-size:22px;font-weight:800;margin:0 0 4px;">
+              Informe ejecutivo — Portafolio de Innovación
+            </h2>
+            <div id="inf-fecha-gen" class="text-sm text-muted"></div>
+          </div>
+          <div class="no-print" style="opacity:.4;font-size:11px;text-align:right;padding-top:4px;">
+            SCTeI · GBA
+          </div>
+        </div>
+        <hr style="border:none;border-top:2px solid var(--border);margin:14px 0 0;">
+      </div>
+
+      <!-- Resumen ejecutivo (texto auto-generado) -->
+      <div class="card mb-3" style="border-left:4px solid var(--primary);">
+        <div class="card-body" style="padding:16px 20px;">
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:8px;">
+            Resumen ejecutivo
+          </div>
+          <p id="inf-resumen" style="font-size:14.5px;line-height:1.7;margin:0;"></p>
+        </div>
+      </div>
+
+      <!-- KPI cards -->
+      <div class="stat-grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:20px;">
+        <div class="stat-card">
+          <div class="stat-icon blue"><span class="material-icons-round">folder_open</span></div>
+          <div><div class="stat-value" id="kpi-total">—</div><div class="stat-label">Total proyectos</div></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon green"><span class="material-icons-round">check_circle</span></div>
+          <div><div class="stat-value" id="kpi-activos">—</div><div class="stat-label">Activos</div></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon" style="background:#E0F7FA;"><span class="material-icons-round" style="color:#00838F;">task_alt</span></div>
+          <div><div class="stat-value" id="kpi-finalizados">—</div><div class="stat-label">Finalizados</div></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon purple"><span class="material-icons-round">location_city</span></div>
+          <div><div class="stat-value" id="kpi-municipios">—</div><div class="stat-label">Municipios</div></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon" style="background:#FFF8E1;"><span class="material-icons-round" style="color:#F5A623;">payments</span></div>
+          <div><div class="stat-value" id="kpi-anr">—</div><div class="stat-label">ANR nominal</div></div>
+        </div>
+        <div class="stat-card" id="kpi-anr-real-card">
+          <div class="stat-icon" style="background:#E8F5E9;"><span class="material-icons-round" style="color:#2E7D32;">price_change</span></div>
+          <div><div class="stat-value" id="kpi-anr-real">—</div><div class="stat-label">ANR actualizado <span id="kpi-ipc-fecha" style="font-size:10px;">(IPC)</span></div></div>
+        </div>
+      </div>
+
+      <!-- Gráficos: fila 1 -->
+      <div class="grid-2 mb-3">
+        <div class="card">
+          <div class="card-header"><span class="card-title">Proyectos por programa</span></div>
+          <div class="card-body"><div class="chart-wrap-lg"><canvas id="inf-chart-prog"></canvas></div></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><span class="card-title">Estado del portafolio</span></div>
+          <div class="card-body" style="display:flex;align-items:center;justify-content:center;">
+            <div style="width:260px;height:260px;"><canvas id="inf-chart-estado"></canvas></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Gráficos: fila 2 -->
+      <div class="grid-2 mb-3">
+        <div class="card">
+          <div class="card-header"><span class="card-title">ANR por programa</span>
+            <span class="text-sm text-muted">nominal vs actualizado (IPC)</span>
+          </div>
+          <div class="card-body"><div class="chart-wrap-lg"><canvas id="inf-chart-anr"></canvas></div></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><span class="card-title">Avance promedio por programa</span></div>
+          <div class="card-body"><div class="chart-wrap-lg"><canvas id="inf-chart-avance"></canvas></div></div>
+        </div>
+      </div>
+
+      <!-- Cobertura territorial -->
+      <div id="inf-municipios-block" class="card mb-3" style="display:none;">
+        <div class="card-header"><span class="card-title">Top municipios por cantidad de proyectos</span></div>
+        <div class="card-body"><div class="chart-wrap-lg"><canvas id="inf-chart-muni"></canvas></div></div>
+      </div>
+
+      <!-- Evolución anual -->
+      <div id="inf-anio-block" class="card mb-3" style="display:none;">
+        <div class="card-header"><span class="card-title">Evolución anual del portafolio</span></div>
+        <div class="card-body"><div class="chart-wrap-lg"><canvas id="inf-chart-anio"></canvas></div></div>
+      </div>
+
+      <!-- Tabla resumen por programa -->
+      <div class="card mb-3">
+        <div class="card-header"><span class="card-title">Resumen por programa</span></div>
+        <div class="table-wrapper">
+          <table id="inf-tabla-prog">
+            <thead>
+              <tr>
+                <th>Programa</th><th>Total</th><th>Activos</th>
+                <th>Finalizados</th><th>ANR nominal</th><th>ANR actualizado</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div><!-- /informe-body -->
+
+    <div id="informe-empty" class="card card-body" style="text-align:center;padding:48px;">
+      <span class="material-icons-round" style="font-size:48px;color:var(--text-muted);display:block;margin-bottom:12px;">assessment</span>
+      <p class="text-muted">Configurá los filtros y hacé clic en <strong>Generar</strong> para ver el informe.</p>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       TAB 3 — ANÁLISIS POR DIMENSIÓN
+  ══════════════════════════════════════════════════════════════════════ -->
+  <div class="tab-content" data-tab-content="analisis">
+
+    <!-- Configuración del análisis -->
+    <div class="card mb-3">
+      <div class="card-header"><span class="card-title">Configurar análisis</span></div>
+      <div class="card-body" style="padding:16px 20px;">
+        <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">Dimensión de análisis</label>
+            <select id="an-dimension" class="form-control" style="width:220px;">
+              <option value="municipio">Municipio</option>
+              <option value="linea">Línea</option>
+              <option value="area_tematica">Área temática</option>
+              <option value="sector_tema">Sector / Tema</option>
+              <option value="sector_actividad_1">Actividad principal</option>
+              <option value="estado">Estado</option>
+              <option value="anio">Año</option>
+              <option value="tipo_beneficiario">Tipo beneficiario</option>
+              <option value="tipo_adoptante">Tipo adoptante</option>
+              <option value="rubro">Rubro</option>
+              <option value="situacion_clinica">Situación clínica</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">Métrica</label>
+            <select id="an-metrica" class="form-control" style="width:220px;">
+              <option value="n">Cantidad de proyectos</option>
+              <option value="anr">Suma ANR nominal ($)</option>
+              <option value="anr_real">Suma ANR actualizado (IPC)</option>
+              <option value="avance_prom">Avance promedio (%)</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">Programa</label>
+            <select id="an-programa" class="form-control" style="width:200px;">
+              <option value="">Todos</option>
+              {% for p in programas %}
+              <option value="{{ p.id }}">{{ p.codigo }} — {{ p.nombre }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">Tipo de gráfico</label>
+            <select id="an-tipo" class="form-control" style="width:140px;">
+              <option value="bar_h">Barra horizontal</option>
+              <option value="bar_v">Barra vertical</option>
+              <option value="doughnut">Torta</option>
+            </select>
+          </div>
+          <button type="button" class="btn btn-primary" onclick="ejecutarAnalisis()">
+            <span class="material-icons-round">play_arrow</span> Analizar
+          </button>
+          <button type="button" id="an-export-btn" class="btn btn-secondary" style="display:none;"
+                  onclick="exportarAnalisis()">
+            <span class="material-icons-round">download</span> Exportar tabla
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Resultado del análisis -->
+    <div id="analisis-body" style="display:none;">
+      <div class="grid-2 mb-3" style="align-items:start;">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title" id="an-chart-title">—</span>
+          </div>
+          <div class="card-body"><div class="chart-wrap-lg"><canvas id="an-chart"></canvas></div></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><span class="card-title">Tabla de datos</span></div>
+          <div class="table-wrapper" style="max-height:380px;overflow-y:auto;">
+            <table>
+              <thead id="an-table-head"></thead>
+              <tbody id="an-table-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="analisis-empty" class="card card-body" style="text-align:center;padding:48px;">
+      <span class="material-icons-round" style="font-size:48px;color:var(--text-muted);display:block;margin-bottom:12px;">bar_chart</span>
+      <p class="text-muted">Elegí una dimensión y métrica, luego hacé clic en <strong>Analizar</strong>.</p>
+    </div>
+  </div>
+
+</div><!-- /tabs-container -->
+{% endblock %}
+
+{% block scripts %}
+<style>
+/* ── Check chips para filtros ── */
+.check-chip { cursor:pointer; user-select:none; }
+.check-chip input { display:none; }
+.check-chip input:not(:checked) + * { opacity:.45; filter:grayscale(40%); }
+
+/* ── Secciones de filtro dinámico ── */
+.filter-section { padding:12px 0; border-bottom:1px solid var(--border); }
+.filter-section:last-child { border-bottom:none; }
+.filter-section-title { font-size:11px; font-weight:700; text-transform:uppercase;
+                         letter-spacing:.06em; color:var(--text-muted); margin-bottom:6px; }
+
+/* ── Columnas checkboxes ── */
+.col-check-item { display:flex; align-items:center; gap:8px; padding:5px 0;
+                  border-bottom:1px solid #F5F5F5; font-size:13px; cursor:pointer; }
+.col-check-item:last-child { border-bottom:none; }
+.col-check-item input[type=checkbox] { accent-color:var(--primary); width:14px; height:14px; flex-shrink:0; }
+.col-badge { font-size:10px; padding:1px 5px; border-radius:3px; background:#EEF1F5;
+             color:var(--text-muted); margin-left:auto; }
+
+/* ── Impresión ── */
+@media print {
+  .no-print, .tabs, .tab-btn, nav, .sidebar, .topbar { display:none !important; }
+  .tab-content { display:block !important; }
+  [data-tab-content="informe"] { display:block !important; }
+  [data-tab-content="exportar"], [data-tab-content="analisis"] { display:none !important; }
+  #informe-empty { display:none !important; }
+  #informe-body { display:block !important; }
+  .card { break-inside:avoid; box-shadow:none; border:1px solid #DDD; }
+  canvas { max-width:100% !important; }
+  body { font-size:12px; }
+  .print-header { display:block !important; }
+}
+.print-header { }
+</style>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════
+// TAB 1 — EXPORTAR
+// ═══════════════════════════════════════════════════════════════════
+
+let _currentCols = [];
+
+async function loadExportConfig(progId) {
+  document.getElementById('exp-loading').style.display = '';
+  document.getElementById('exp-dynamic-filters').innerHTML = '';
+  document.getElementById('exp-cols-panel').innerHTML =
+    '<p class="text-muted text-sm">Cargando…</p>';
+
+  const url = `/api/reportes/columnas${progId ? '?programa_id=' + progId : ''}`;
+  const resp = await fetch(url);
+  const data = await resp.json();
+  _currentCols = data.columnas;
+
+  renderFilters(data.columnas, data.prog_codigo);
+  renderColCheckboxes(data.columnas);
+  document.getElementById('exp-loading').style.display = 'none';
+}
+
+function renderFilters(cols, progCodigo) {
+  const container = document.getElementById('exp-dynamic-filters');
+  let html = '';
+
+  for (const col of cols) {
+    if (!col.filterable || col.computed || col.ftype === 'estado') continue;
+
+    html += `<div class="filter-section">
+      <div class="filter-section-title">${col.label}</div>`;
+
+    if (col.ftype === 'text') {
+      html += `<input type="text" name="f_${col.key}" class="form-control"
+                style="max-width:300px;" placeholder="Buscar por ${col.label.toLowerCase()}…">`;
+
+    } else if (col.ftype === 'dynamic' && col.options) {
+      if (col.options.length <= 8) {
+        html += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;">`;
+        for (const opt of col.options) {
+          html += `<label style="cursor:pointer;display:flex;align-items:center;gap:4px;">
+            <input type="radio" name="f_${col.key}" value="${opt}">
+            <span class="tag">${opt}</span>
+          </label>`;
+        }
+        html += `<label style="cursor:pointer;display:flex;align-items:center;gap:4px;">
+          <input type="radio" name="f_${col.key}" value="" checked>
+          <span class="text-muted text-sm">Todos</span>
+        </label></div>`;
+      } else {
+        html += `<select name="f_${col.key}" class="form-control" style="max-width:260px;">
+          <option value="">Todos</option>
+          ${col.options.map(o => `<option value="${o}">${o}</option>`).join('')}
+        </select>`;
+      }
+
+    } else if (col.ftype === 'anio') {
+      const mn = col.rango?.min || 2019;
+      const mx = col.rango?.max || 2026;
+      html += `<div style="display:flex;gap:8px;align-items:center;">
+        <input type="number" name="f_${col.key}_desde" class="form-control"
+               style="width:90px;" placeholder="${mn}" min="${mn}" max="${mx}">
+        <span class="text-muted">—</span>
+        <input type="number" name="f_${col.key}_hasta" class="form-control"
+               style="width:90px;" placeholder="${mx}" min="${mn}" max="${mx}">
+      </div>`;
+
+    } else if (col.ftype === 'rango_monto') {
+      const mn = col.rango ? '$' + col.rango.min.toLocaleString('es-AR') : 'mínimo';
+      const mx = col.rango ? '$' + col.rango.max.toLocaleString('es-AR') : 'máximo';
+      html += `<div style="display:flex;gap:8px;align-items:center;">
+        <input type="number" name="f_${col.key}_min" class="form-control"
+               style="width:130px;" placeholder="${mn}">
+        <span class="text-muted">—</span>
+        <input type="number" name="f_${col.key}_max" class="form-control"
+               style="width:130px;" placeholder="${mx}">
+      </div>`;
+
+    } else if (col.ftype === 'rango_numero') {
+      html += `<div style="display:flex;gap:8px;align-items:center;">
+        <input type="number" name="f_${col.key}_min" class="form-control"
+               style="width:90px;" placeholder="mín">
+        <span class="text-muted">—</span>
+        <input type="number" name="f_${col.key}_max" class="form-control"
+               style="width:90px;" placeholder="máx">
+      </div>`;
+    }
+
+    html += `</div>`;
+  }
+
+  container.innerHTML = html || '<p class="text-muted text-sm">No hay filtros adicionales para este programa.</p>';
+}
+
+function renderColCheckboxes(cols) {
+  const panel = document.getElementById('exp-cols-panel');
+  const groups = {
+    'Básicas': [],
+    'Financieras': [],
+    'Específicas del programa': [],
+    'Otras': [],
+  };
+
+  const FINANCIAL = new Set(['anr_monto','monto_diagnostico','anr_actualizado']);
+  const BASIC     = new Set(['nombre','codigo','estado','municipio','localidad','programa','agente','porcentaje_avance']);
+
+  for (const col of cols) {
+    const item = { ...col };
+    if (BASIC.has(col.key))     groups['Básicas'].push(item);
+    else if (FINANCIAL.has(col.key)) groups['Financieras'].push(item);
+    else if (!col.progs || col.progs?.length)  groups['Específicas del programa'].push(item);
+    else groups['Otras'].push(item);
+  }
+
+  let html = '';
+  for (const [group, items] of Object.entries(groups)) {
+    if (!items.length) continue;
+    html += `<div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;
+                         color:var(--text-muted);font-weight:700;padding:8px 0 4px;">${group}</div>`;
+    for (const col of items) {
+      html += `<label class="col-check-item">
+        <input type="checkbox" name="cols" value="${col.key}"
+               ${col.default ? 'checked' : ''}>
+        <span>${col.label}</span>
+        ${col.computed ? '<span class="col-badge">calculado</span>' : ''}
+      </label>`;
+    }
+  }
+
+  panel.innerHTML = html || '<p class="text-muted text-sm">No hay columnas disponibles.</p>';
+}
+
+function toggleAllCols(check) {
+  document.querySelectorAll('#exp-cols-panel input[type=checkbox]')
+    .forEach(cb => cb.checked = check);
+}
+
+function clearFilters() {
+  const form = document.getElementById('export-form');
+  form.querySelectorAll('input[type=text], input[type=number]').forEach(i => i.value = '');
+  form.querySelectorAll('input[type=radio][value=""]').forEach(r => r.checked = true);
+  form.querySelectorAll('select:not(#exp-programa)').forEach(s => s.selectedIndex = 0);
+  form.querySelectorAll('input[type=checkbox][name="f_estado"]').forEach(cb => cb.checked = false);
+}
+
+// Estado multi-checkbox → hidden field
+function handleEstadoMulti(cb) {
+  const checked = [...document.querySelectorAll('input[name="f_estado"]:checked')].map(c => c.value);
+  // Permitir múltiples valores – el form los envía como múltiples params
+}
+
+// Cargar columnas por defecto (todos los programas) al iniciar
+loadExportConfig('');
+
+
+// ═══════════════════════════════════════════════════════════════════
+// TAB 2 — INFORME EJECUTIVO
+// ═══════════════════════════════════════════════════════════════════
+
+let _infCharts = {};
+
+function destroyInfCharts() {
+  Object.values(_infCharts).forEach(c => { if (c) c.destroy(); });
+  _infCharts = {};
+}
+
+function fmtMonto(v) {
+  if (!v) return '—';
+  if (v >= 1e9) return '$' + (v/1e9).toFixed(2) + ' MM';
+  if (v >= 1e6) return '$' + (v/1e6).toFixed(1) + 'M';
+  if (v >= 1e3) return '$' + (v/1e3).toFixed(0) + 'K';
+  return '$' + v.toLocaleString('es-AR');
+}
+
+async function generarInforme() {
+  const progIds = [...document.querySelectorAll('.inf-prog:checked')].map(c => c.value);
+  const anioDesde = document.getElementById('inf-anio-desde').value;
+  const anioHasta = document.getElementById('inf-anio-hasta').value;
+  const estado = document.getElementById('inf-estado').value;
+  const municipio = document.getElementById('inf-municipio').value;
+  const ib2 = document.getElementById('inf-ib2').value;
+
+  const params = new URLSearchParams();
+  progIds.forEach(id => params.append('programa_id', id));
+  if (anioDesde) params.append('anio_desde', anioDesde);
+  if (anioHasta) params.append('anio_hasta', anioHasta);
+  if (estado) params.append('estado', estado);
+  if (municipio) params.append('municipio', municipio);
+  if (ib2) params.append('ib2', ib2);
+
+  const resp = await fetch('/api/reportes/datos?' + params);
+  const d = await resp.json();
+
+  destroyInfCharts();
+  document.getElementById('informe-empty').style.display = 'none';
+  document.getElementById('informe-body').style.display = '';
+
+  // KPIs
+  document.getElementById('kpi-total').textContent = d.kpis.total || 0;
+  document.getElementById('kpi-activos').textContent = d.kpis.activos || 0;
+  document.getElementById('kpi-finalizados').textContent = d.kpis.finalizados || 0;
+  document.getElementById('kpi-municipios').textContent = d.kpis.municipios || 0;
+  document.getElementById('kpi-anr').textContent = fmtMonto(d.kpis.anr_nominal);
+  document.getElementById('inf-fecha-gen').textContent = 'Generado el ' + d.generado;
+
+  document.getElementById('kpi-anr-real').textContent = fmtMonto(d.kpis.anr_real || d.kpis.anr_nominal);
+  document.getElementById('kpi-ipc-fecha').textContent = d.ipc_fecha ? '(IPC ' + d.ipc_fecha + ')' : '(IPC)';
+  document.getElementById('kpi-anr-real-card').style.display = '';
+
+  // Resumen ejecutivo
+  document.getElementById('inf-resumen').innerHTML = d.resumen;
+
+  // Chart: proyectos por programa
+  const progs = d.por_programa;
+  _infCharts.prog = new Chart(document.getElementById('inf-chart-prog'), {
+    type: 'bar',
+    data: {
+      labels: progs.map(p => p.codigo),
+      datasets: [
+        { label: 'Activos',    data: progs.map(p => p.activos),    backgroundColor: '#22A954CC', borderColor: '#22A954', borderWidth: 2, borderRadius: 5 },
+        { label: 'Finalizados',data: progs.map(p => p.finalizados),backgroundColor: '#00AEC3CC', borderColor: '#00AEC3', borderWidth: 2, borderRadius: 5 },
+        { label: 'Suspendidos',data: progs.map(p => p.suspendidos||0),backgroundColor: '#D32F2F55', borderColor: '#D32F2F', borderWidth: 1, borderRadius: 5 },
+      ]
+    },
+    options: { responsive: true, maintainAspectRatio: false,
+               plugins: { legend: { position: 'top' } },
+               scales: { x: { stacked: true, grid: { display: false } },
+                         y: { stacked: true, beginAtZero: true, grid: { color: '#EEF1F5' } } } }
+  });
+
+  // Chart: estado global (doughnut)
+  const estados = d.por_estado;
+  const estadoColors = { activo: '#22A954', finalizado: '#00AEC3', suspendido: '#D32F2F', en_evaluacion: '#F5A623' };
+  const estadoLabels = { activo: 'Activo', finalizado: 'Finalizado', suspendido: 'Suspendido', en_evaluacion: 'En evaluación' };
+  _infCharts.estado = new Chart(document.getElementById('inf-chart-estado'), {
+    type: 'doughnut',
+    data: {
+      labels: estados.map(e => estadoLabels[e.estado] || e.estado),
+      datasets: [{ data: estados.map(e => e.n),
+                   backgroundColor: estados.map(e => estadoColors[e.estado] || '#888'),
+                   borderWidth: 3, borderColor: '#fff' }]
+    },
+    options: { responsive: true, maintainAspectRatio: false, cutout: '62%',
+               plugins: { legend: { position: 'bottom' } } }
+  });
+
+  // Chart: ANR por programa (nominal + actualizado)
+  _infCharts.anr = new Chart(document.getElementById('inf-chart-anr'), {
+    type: 'bar',
+    data: {
+      labels: progs.map(p => p.codigo),
+      datasets: [
+        {
+          label: 'ANR nominal ($)',
+          data: progs.map(p => p.anr_nominal || 0),
+          backgroundColor: progs.map(p => (p.color || '#1E325C') + '55'),
+          borderColor: progs.map(p => p.color || '#1E325C'),
+          borderWidth: 2, borderRadius: 5
+        },
+        {
+          label: 'ANR actualizado ($)',
+          data: progs.map(p => p.anr_real || 0),
+          backgroundColor: progs.map(p => (p.color || '#1E325C') + 'CC'),
+          borderColor: progs.map(p => p.color || '#1E325C'),
+          borderWidth: 2, borderRadius: 5
+        }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: true, position: 'top' },
+        tooltip: { callbacks: { label: ctx => ' ' + fmtMonto(ctx.raw) } }
+      },
+      scales: {
+        y: { beginAtZero: true, grid: { color: '#EEF1F5' },
+             ticks: { callback: v => fmtMonto(v) } },
+        x: { grid: { display: false } }
+      }
+    }
+  });
+
+  // Chart: avance promedio
+  const avanceProg = d.avance_prog;
+  _infCharts.avance = new Chart(document.getElementById('inf-chart-avance'), {
+    type: 'bar',
+    data: {
+      labels: avanceProg.map(p => p.codigo),
+      datasets: [{ label: 'Avance promedio (%)', data: avanceProg.map(p => Math.round(p.avance || 0)),
+                   backgroundColor: avanceProg.map(p => (p.color || '#F5A623') + '99'),
+                   borderColor: avanceProg.map(p => p.color || '#F5A623'),
+                   borderWidth: 2, borderRadius: 5 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { beginAtZero: true, max: 100, grid: { color: '#EEF1F5' },
+             ticks: { callback: v => v + '%' } },
+        x: { grid: { display: false } }
+      }
+    }
+  });
+
+  // Chart: municipios
+  if (d.por_municipio && d.por_municipio.length > 0) {
+    document.getElementById('inf-municipios-block').style.display = '';
+    if (_infCharts.muni) _infCharts.muni.destroy();
+    _infCharts.muni = new Chart(document.getElementById('inf-chart-muni'), {
+      type: 'bar',
+      data: {
+        labels: d.por_municipio.map(m => m.municipio),
+        datasets: [{ label: 'Proyectos', data: d.por_municipio.map(m => m.n),
+                     backgroundColor: '#1E325CBB', borderColor: '#1E325C',
+                     borderWidth: 2, borderRadius: 4 }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+        plugins: { legend: { display: false } },
+        scales: { x: { beginAtZero: true, grid: { color: '#EEF1F5' } },
+                  y: { grid: { display: false } } }
+      }
+    });
+  }
+
+  // Chart: evolución anual
+  if (d.por_anio && d.por_anio.length > 1) {
+    document.getElementById('inf-anio-block').style.display = '';
+    if (_infCharts.anio) _infCharts.anio.destroy();
+    _infCharts.anio = new Chart(document.getElementById('inf-chart-anio'), {
+      type: 'bar',
+      data: {
+        labels: d.por_anio.map(a => a.anio),
+        datasets: [
+          { label: 'Proyectos', data: d.por_anio.map(a => a.n),
+            backgroundColor: '#006AC155', borderColor: '#006AC1', borderWidth: 2, borderRadius: 4,
+            yAxisID: 'yCount' },
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'top' } },
+        scales: {
+          yCount: { beginAtZero: true, position: 'left', grid: { color: '#EEF1F5' },
+                    title: { display: true, text: 'Proyectos' } },
+          x: { grid: { display: false } }
+        }
+      }
+    });
+  }
+
+  // Tabla resumen por programa
+  const tbody = document.querySelector('#inf-tabla-prog tbody');
+  tbody.innerHTML = progs.map(p =>
+    `<tr>
+      <td><span class="tag" style="background:${p.color}22;border-color:${p.color}44;color:${p.color};">${p.codigo}</span>
+          <span class="text-sm" style="margin-left:6px;">${p.nombre}</span></td>
+      <td style="font-weight:600;">${p.total}</td>
+      <td><span class="badge badge-activo">${p.activos}</span></td>
+      <td><span class="badge badge-finalizado">${p.finalizados}</span></td>
+      <td class="text-sm">${fmtMonto(p.anr_nominal)}</td>
+      <td class="text-sm">${fmtMonto(p.anr_real)}</td>
+    </tr>`
+  ).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// TAB 3 — ANÁLISIS
+// ═══════════════════════════════════════════════════════════════════
+
+let _anChart = null;
+let _anData  = null;
+
+const METRICAS = { n: 'Cantidad', anr: 'ANR nominal ($)', anr_real: 'ANR actualizado ($)', avance_prom: 'Avance prom. (%)' };
+
+async function ejecutarAnalisis() {
+  const dimension = document.getElementById('an-dimension').value;
+  const metrica   = document.getElementById('an-metrica').value;
+  const progId    = document.getElementById('an-programa').value;
+
+  const params = new URLSearchParams({ dimension });
+  if (progId) params.append('programa_id', progId);
+
+  const resp = await fetch('/api/reportes/datos?' + params);
+  const d = await resp.json();
+  _anData = d;
+
+  if (!d.dimension || !d.dimension.labels || !d.dimension.labels.length) {
+    document.getElementById('analisis-empty').style.display = '';
+    document.getElementById('analisis-body').style.display = 'none';
+    document.getElementById('analisis-empty').querySelector('p').textContent =
+      'Sin datos para esa combinación de dimensión y filtros.';
+    return;
+  }
+
+  document.getElementById('analisis-empty').style.display = 'none';
+  document.getElementById('analisis-body').style.display = '';
+  document.getElementById('an-export-btn').style.display = '';
+
+  renderAnalisis(d.dimension, metrica);
+}
+
+function renderAnalisis(dim, metrica) {
+  const tipo = document.getElementById('an-tipo').value;
+  const metricaLabel = METRICAS[metrica] || metrica;
+  const title = `${dim.label} — ${metricaLabel}`;
+  document.getElementById('an-chart-title').textContent = title;
+
+  const labels  = dim.labels;
+  const vals    = metrica === 'n'        ? dim.values_n :
+                  metrica === 'anr'      ? dim.values_anr :
+                  metrica === 'anr_real' ? (dim.values_anr_real || dim.values_anr) :
+                                          dim.values_avance;
+
+  if (_anChart) _anChart.destroy();
+
+  const palette = [
+    '#006AC1','#22A954','#00AEC3','#7B1FA2','#E65100',
+    '#1B5E20','#F5A623','#D32F2F','#00695C','#546E7A',
+  ];
+  const colors = labels.map((_, i) => palette[i % palette.length]);
+
+  const isHoriz = tipo === 'bar_h';
+  const isDoughnut = tipo === 'doughnut';
+
+  _anChart = new Chart(document.getElementById('an-chart'), {
+    type: isDoughnut ? 'doughnut' : 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: metricaLabel,
+        data: vals,
+        backgroundColor: isDoughnut ? colors : colors.map(c => c + 'BB'),
+        borderColor:     isDoughnut ? '#fff' : colors,
+        borderWidth: isDoughnut ? 3 : 2,
+        borderRadius: isDoughnut ? 0 : 5,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      indexAxis: isHoriz ? 'y' : 'x',
+      plugins: {
+        legend: { display: isDoughnut, position: 'right' },
+        tooltip: {
+          callbacks: {
+            label: ctx => (metrica === 'anr' || metrica === 'anr_real')
+              ? ' ' + fmtMonto(ctx.raw)
+              : metrica === 'avance_prom'
+              ? ' ' + ctx.raw + '%'
+              : ' ' + ctx.raw + ' proyectos'
+          }
+        }
+      },
+      scales: isDoughnut ? {} : {
+        [isHoriz ? 'x' : 'y']: {
+          beginAtZero: true,
+          grid: { color: '#EEF1F5' },
+          ticks: (metrica === 'anr' || metrica === 'anr_real')
+            ? { callback: v => fmtMonto(v) }
+            : metrica === 'avance_prom'
+            ? { callback: v => v + '%' }
+            : {}
+        },
+        [isHoriz ? 'y' : 'x']: { grid: { display: false } }
+      }
+    }
+  });
+
+  // Tabla
+  const metricaKey = metrica;
+  const thead = document.getElementById('an-table-head');
+  const tbody = document.getElementById('an-table-body');
+
+  thead.innerHTML = `<tr>
+    <th style="width:40px;">#</th>
+    <th>${dim.label}</th>
+    <th>Proyectos</th>
+    <th>ANR nominal</th>
+    <th>ANR actualizado</th>
+    <th>Avance prom.</th>
+  </tr>`;
+
+  tbody.innerHTML = labels.map((lbl, i) =>
+    `<tr>
+      <td class="text-muted text-sm">${i + 1}</td>
+      <td style="font-weight:600;">${lbl}</td>
+      <td>${dim.values_n[i]}</td>
+      <td class="text-sm">${fmtMonto(dim.values_anr[i])}</td>
+      <td class="text-sm">${dim.values_anr_real ? fmtMonto(dim.values_anr_real[i]) : '—'}</td>
+      <td>${dim.values_avance[i]}%</td>
+    </tr>`
+  ).join('');
+}
+
+function exportarAnalisis() {
+  if (!_anData || !_anData.dimension) return;
+  const dim = _anData.dimension;
+  const rows = dim.labels.map((lbl, i) => ({
+    [dim.label]: lbl,
+    'Cantidad': dim.values_n[i],
+    'ANR nominal ($)': dim.values_anr[i],
+    'ANR actualizado ($)': dim.values_anr_real ? dim.values_anr_real[i] : dim.values_anr[i],
+    'Avance prom. (%)': dim.values_avance[i],
+  }));
+  // Convertir a CSV y descargar
+  const cols = Object.keys(rows[0]);
+  const csv = [cols.join(','), ...rows.map(r => cols.map(c => `"${r[c] ?? ''}"`).join(','))].join('\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `analisis_${dim.campo}_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+}
+
+// Actualizar gráfico al cambiar tipo sin re-fetch
+document.getElementById('an-tipo').addEventListener('change', () => {
+  if (_anData?.dimension) {
+    const metrica = document.getElementById('an-metrica').value;
+    renderAnalisis(_anData.dimension, metrica);
+  }
+});
+document.getElementById('an-metrica').addEventListener('change', () => {
+  if (_anData?.dimension) {
+    const metrica = document.getElementById('an-metrica').value;
+    renderAnalisis(_anData.dimension, metrica);
+  }
+});
+</script>
+{% endblock %}

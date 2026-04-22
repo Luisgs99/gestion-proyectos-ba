@@ -1,0 +1,484 @@
+{% extends "base.html" %}
+{% block title %}ORBITA — Dashboard{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('programas.list') }}" style="color:var(--text-muted);text-decoration:none;">Programas</a>
+  / ORBITA
+{% endblock %}
+
+{% block topbar_actions %}
+  <!-- Selector de 3 opciones -->
+  <div style="display:flex;align-items:center;gap:2px;background:var(--surface-2);border:1.5px solid var(--border);border-radius:8px;padding:3px;">
+    <button id="orb-btn-n"   class="metric-btn metric-btn-active" onclick="orbSetMode('n')">Documentos</button>
+    <button id="orb-btn-nom" class="metric-btn"                   onclick="orbSetMode('nom')">ANR nominal</button>
+    <button id="orb-btn-real" class="metric-btn"                  onclick="orbSetMode('real')">ANR real <span style="font-size:9px;opacity:.7;">{{ ipc_fecha_val }}</span></button>
+  </div>
+  {% if can_edit() %}
+  <a href="{{ url_for('proyectos.nuevo') }}?programa={{ programa.id }}" class="btn btn-primary btn-sm">
+    <span class="material-icons-round">add</span> Nuevo documento
+  </a>
+  {% endif %}
+  <a href="{{ url_for('reportes.exportar') }}?programa_id={{ programa.id }}" class="btn btn-secondary btn-sm">
+    <span class="material-icons-round">download</span> Exportar Excel
+  </a>
+  <a href="{{ url_for('reportes.ipc') }}" class="btn btn-secondary btn-sm" title="Herramienta IPC completa">
+    <span class="material-icons-round">calculate</span>
+  </a>
+{% endblock %}
+
+{% block content %}
+
+<!-- Header -->
+<div style="background:linear-gradient(135deg,#1E325C 0%,#592673 70%,#00AEC3 100%);border-radius:14px;padding:26px 32px;margin-bottom:24px;color:#fff;position:relative;overflow:hidden;">
+  <div style="position:absolute;right:-40px;top:-40px;width:200px;height:200px;border-radius:50%;background:rgba(255,255,255,.05);"></div>
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:20px;flex-wrap:wrap;position:relative;z-index:1;">
+    <div>
+      <div style="font-size:11px;opacity:.6;margin-bottom:6px;letter-spacing:.1em;text-transform:uppercase;font-family:'Encode Sans',sans-serif;">Programa</div>
+      <h1 style="font-family:'Encode Sans',sans-serif;font-size:28px;font-weight:800;margin-bottom:4px;">ORBITA</h1>
+      <p style="opacity:.75;font-size:14px;">Observatorio Bonaerense de Investigación, Tecnología e Innovación</p>
+      <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">
+        {% for l in por_linea %}
+        <span style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.2);color:#fff;padding:4px 12px;border-radius:20px;font-size:11.5px;font-weight:600;">{{ l.linea }}</span>
+        {% endfor %}
+      </div>
+    </div>
+    <div style="display:flex;gap:24px;text-align:center;flex-wrap:wrap;">
+      <div>
+        <div style="font-family:'Encode Sans',sans-serif;font-size:38px;font-weight:800;line-height:1;">{{ total }}</div>
+        <div style="font-size:12px;opacity:.65;margin-top:2px;">documentos</div>
+      </div>
+      <div style="border-left:1px solid rgba(255,255,255,.2);padding-left:24px;">
+        <div style="font-family:'Encode Sans',sans-serif;font-size:38px;font-weight:800;line-height:1;">{{ publicados }}</div>
+        <div style="font-size:12px;opacity:.65;margin-top:2px;">publicados</div>
+      </div>
+      <div style="border-left:1px solid rgba(255,255,255,.2);padding-left:24px;">
+        <div style="font-family:'Encode Sans',sans-serif;font-size:38px;font-weight:800;line-height:1;">
+          <span id="orb-hdr-nom">${{ "%.1f"|format(total_anr/1e6) }}M</span>
+          <span id="orb-hdr-real" style="display:none;">${{ "%.1f"|format(total_anr_real/1e6) }}M</span>
+        </div>
+        <div id="orb-hdr-label" style="font-size:12px;opacity:.65;margin-top:2px;">ANR total</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- KPI cards -->
+<div class="stat-grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr));margin-bottom:24px;">
+  {% set estado_colors = {'Publicado':'green','En elaboración':'gold','En edición':'blue','En revisión':'orange','Próximo a publicarse':'purple'} %}
+  {% set estado_icons  = {'Publicado':'check_circle','En elaboración':'edit','En edición':'rate_review','En revisión':'find_in_page','Próximo a publicarse':'schedule'} %}
+  {% for e in pipeline_ed %}
+  <div class="stat-card">
+    <div class="stat-icon {{ estado_colors.get(e.estado_ed, 'blue') }}">
+      <span class="material-icons-round">{{ estado_icons.get(e.estado_ed, 'article') }}</span>
+    </div>
+    <div>
+      <div class="stat-value">{{ e.n }}</div>
+      <div class="stat-label">{{ e.estado_ed }}</div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Tabs -->
+<div class="tabs-container">
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="overview">Visión general</button>
+    <button class="tab-btn" data-tab="documentos">Documentos ({{ total }})</button>
+  </div>
+
+  <!-- TAB: Visión general -->
+  <div class="tab-content active" data-tab-content="overview">
+
+    <div class="grid-2 mb-3">
+      <!-- Pipeline editorial -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Pipeline editorial</span>
+          <span class="text-sm text-muted">Estado de los documentos</span>
+        </div>
+        <div class="card-body">
+          {% set pipeline_colors = {'Publicado':'var(--green)','En elaboración':'var(--gold)','En edición':'var(--teal)','En revisión':'var(--orange)','Próximo a publicarse':'var(--purple)'} %}
+          {% set total_n = pipeline_ed|sum(attribute='n') %}
+          {% for e in pipeline_ed %}
+          {% set pct = (e.n / total_n * 100) if total_n > 0 else 0 %}
+          <div style="margin-bottom:14px;">
+            <div style="display:flex;justify-content:space-between;margin-bottom:5px;align-items:center;">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <div style="width:10px;height:10px;border-radius:50%;background:{{ pipeline_colors.get(e.estado_ed,'var(--teal)') }};flex-shrink:0;"></div>
+                <span style="font-weight:600;font-size:13.5px;">{{ e.estado_ed }}</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span style="font-family:'Encode Sans',sans-serif;font-weight:800;font-size:17px;color:{{ pipeline_colors.get(e.estado_ed,'var(--teal)') }};">{{ e.n }}</span>
+                <span class="text-muted text-sm">{{ "%.0f"|format(pct) }}%</span>
+              </div>
+            </div>
+            <div class="progress-bar" style="height:8px;border-radius:4px;">
+              <div style="height:8px;width:{{ pct|int }}%;background:{{ pipeline_colors.get(e.estado_ed,'var(--teal)') }};border-radius:4px;"></div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- Por línea -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Distribución por línea</span>
+        </div>
+        <div class="card-body">
+          <div class="chart-wrap"><canvas id="chart-linea"></canvas></div>
+          <div style="margin-top:16px;">
+            {% set linea_colors = ['#1E325C','#592673','#00AEC3','#1A9E5C'] %}
+            {% for l in por_linea %}
+            <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);">
+              <div style="width:10px;height:10px;border-radius:50%;background:{{ linea_colors[loop.index0 % 4] }};flex-shrink:0;"></div>
+              <div style="flex:1;">
+                <div style="display:flex;justify-content:space-between;">
+                  <span style="font-weight:600;font-size:13px;">{{ l.linea }}</span>
+                  <span style="font-weight:700;">{{ l.n }}</span>
+                </div>
+                <div style="display:flex;gap:10px;margin-top:2px;">
+                  <span class="text-sm text-muted">{{ l.publicados }} publicados</span>
+                  <span class="text-sm text-muted orb-linea-anr"
+                       data-nom="{{ ((l.total_anr or 0)/1e6)|round(1) }}"
+                       data-real="{{ ((l.total_real or 0)/1e6)|round(1) }}">ANR: ${{ "%.1f"|format((l.total_anr or 0)/1e6) }}M</span>
+                </div>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid-2 mb-3">
+      <!-- Por institución -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Instituciones beneficiarias</span>
+          <span id="orb-ib-sublabel" class="text-sm text-muted">Documentos por IB</span>
+        </div>
+        <div class="card-body"><div class="chart-wrap-lg"><canvas id="chart-ib"></canvas></div></div>
+      </div>
+
+      <!-- Por año -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Producción por año</span>
+          <span id="orb-anio-sublabel" class="text-sm text-muted">ANR nominal · año de redacción</span>
+        </div>
+        <div class="card-body"><div class="chart-wrap-lg"><canvas id="chart-anios"></canvas></div></div>
+      </div>
+    </div>
+
+    <!-- ANR por IB -->
+    <div class="card">
+      <div class="card-header"><span class="card-title">Detalle por institución beneficiaria</span></div>
+      <div class="table-wrapper">
+        <table>
+          <thead><tr><th>Institución</th><th>Documentos</th><th id="orb-ib-tbl-hdr">ANR total</th><th>% del total</th></tr></thead>
+          <tbody>
+            {% for ib in por_ib %}
+            <tr>
+              <td style="font-weight:700;font-size:13.5px;">{{ ib.beneficiario }}</td>
+              <td>{{ ib.n }}</td>
+              <td class="mono text-sm orb-ib-anr"
+                  data-nom="{{ ((ib.total_anr or 0)/1e6)|round(1) }}"
+                  data-real="{{ ((ib.total_real or 0)/1e6)|round(1) }}">${{ "%.1f"|format((ib.total_anr or 0)/1e6) }}M</td>
+              <td>
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <div class="progress-bar" style="width:80px;height:5px;"><div class="progress-fill" style="width:{{ (ib.n/total*100)|int }}%;"></div></div>
+                  <span class="text-sm text-muted">{{ "%.0f"|format(ib.n/total*100) }}%</span>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- /overview -->
+
+  <!-- TAB: Documentos -->
+  <div class="tab-content" data-tab-content="documentos">
+    <!-- Filtros -->
+    <div class="filter-bar mb-2">
+      <input type="text" id="orb-search" class="form-control" placeholder="Buscar por título…" style="max-width:300px;">
+      <select id="orb-linea" class="form-control" style="max-width:220px;">
+        <option value="">Todas las líneas</option>
+        {% for l in por_linea %}<option value="{{ l.linea }}">{{ l.linea }}</option>{% endfor %}
+      </select>
+      <select id="orb-estado" class="form-control" style="max-width:180px;">
+        <option value="">Todos los estados</option>
+        {% for e in pipeline_ed %}<option value="{{ e.estado_ed }}">{{ e.estado_ed }}</option>{% endfor %}
+      </select>
+      <select id="orb-ib" class="form-control" style="max-width:140px;">
+        <option value="">Todas las IB</option>
+        {% for ib in por_ib %}<option value="{{ ib.beneficiario }}">{{ ib.beneficiario }}</option>{% endfor %}
+      </select>
+    </div>
+
+    <div class="card">
+      <div class="table-wrapper">
+        <table id="orb-table">
+          <thead>
+            <tr>
+              <th>Código</th>
+              <th>Título</th>
+              <th>Línea</th>
+              <th>IB</th>
+              <th>Año redacción</th>
+              <th>Año publicación</th>
+              <th id="orb-table-anr-header">ANR</th>
+              <th>Estado</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% set linea_col = {'Documento de trabajo':'#1E325C','Ficha de Planificación Estratégica':'#592673','Estudios de caso':'#00AEC3','Indicadores de CTeI':'#1A9E5C'} %}
+            {% set est_badge = {'Publicado':'finalizado','En elaboración':'pendiente','En edición':'activo','En revisión':'en_proceso','Próximo a publicarse':'en_finalizacion'} %}
+            {% for p in proyectos %}
+            <tr data-titulo="{{ p.nombre|lower }}" data-linea="{{ p.linea or '' }}" data-estado="{{ p.situacion_clinica or '' }}" data-ib="{{ p.ib2 or '' }}">
+              <td class="mono text-sm" style="color:var(--text-muted);">{{ p.codigo }}</td>
+              <td style="max-width:260px;">
+                <a href="{{ url_for('proyectos.detail', pid=p.id) }}" style="font-weight:600;color:var(--teal);text-decoration:none;font-size:13px;">
+                  {{ p.nombre[:70] }}{% if p.nombre|length > 70 %}…{% endif %}
+                </a>
+              </td>
+              <td>
+                {% if p.linea %}
+                <span style="background:{{ linea_col.get(p.linea,'#1E325C') }}22;color:{{ linea_col.get(p.linea,'#1E325C') }};padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">
+                  {{ p.linea[:20] }}{% if p.linea|length > 20 %}…{% endif %}
+                </span>
+                {% else %}—{% endif %}
+              </td>
+              <td style="font-weight:600;font-size:13px;">{{ p.ib2 or '—' }}</td>
+              <td class="text-sm">{{ p.anio or '—' }}</td>
+              <td class="text-sm">{{ p.anio_publicacion or '—' }}</td>
+              <td class="mono text-sm orb-table-anr"
+                  data-nom="{{ p.anr_monto or 0 }}"
+                  data-real="{{ p.anr_real or 0 }}">
+                {% if p.anr_monto %}${{ "%.1f"|format(p.anr_monto/1e6) }}M{% else %}<span class="text-muted">—</span>{% endif %}
+              </td>
+              <td>
+                <span class="badge badge-{{ est_badge.get(p.situacion_clinica,'pendiente') }}" style="font-size:11px;">
+                  {{ p.situacion_clinica or '—' }}
+                </span>
+              </td>
+              <td><a href="{{ url_for('proyectos.detail', pid=p.id) }}" class="btn btn-secondary btn-sm btn-icon"><span class="material-icons-round">open_in_new</span></a></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div style="padding:10px 16px;border-top:1px solid var(--border);">
+        <span class="text-sm text-muted" id="orb-count">{{ total }} documentos</span>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /tabs -->
+{% endblock %}
+{% block scripts %}
+<script>
+/* ── Data ── */
+const ORB = {
+  linea:    {{ por_linea|tojson }},
+  ib:       {{ por_ib|tojson }},
+  anio:     {{ por_anio|tojson }},
+  pipeline: {{ pipeline_ed|tojson }},
+};
+const ORB_TOTALS = { n: {{ total }}, nom: {{ total_anr }}, real: {{ total_anr_real }} };
+const ORB_IPC_FECHA = {{ ipc_fecha_val|tojson }};
+const C = { navy:'#1E325C', purple:'#592673', teal:'#00AEC3', green:'#1A9E5C' };
+const lineaColors = [C.navy, C.purple, C.teal, C.green];
+
+function fmtM(v) {
+  if (v >= 1e9) return '$'+(v/1e9).toFixed(1)+'MM';
+  if (v >= 1e6) return '$'+(v/1e6).toFixed(0)+'M';
+  return '$'+Math.round(v).toLocaleString('es-AR');
+}
+
+let orbMode = 'n'; // 'n' | 'nom' | 'real'
+let chartLinea, chartIB, chartAnios;
+
+function orbSetMode(mode) {
+  orbMode = mode;
+
+  /* Highlight active button */
+  ['n','nom','real'].forEach(m => {
+    const btn = document.getElementById('orb-btn-'+m);
+    if (btn) btn.className = 'metric-btn' + (m === mode ? ' metric-btn-active' : '');
+  });
+
+  const isAnr  = (mode !== 'n');
+  const isReal = (mode === 'real');
+  const key    = isReal ? 'total_real' : 'total_anr';
+
+  /* ── Header ── */
+  const hdrNom = document.getElementById('orb-hdr-nom');
+  const hdrLbl = document.getElementById('orb-hdr-label');
+  if (mode === 'n') {
+    if (hdrNom) hdrNom.textContent = ORB_TOTALS.n;
+    if (hdrLbl) hdrLbl.textContent = 'documentos totales';
+  } else {
+    if (hdrNom) hdrNom.textContent = fmtM(isReal ? ORB_TOTALS.real : ORB_TOTALS.nom);
+    if (hdrLbl) hdrLbl.textContent = isReal ? ('ANR pesos '+ORB_IPC_FECHA) : 'ANR total';
+  }
+
+  /* ── IB chart ── */
+  if (chartIB) {
+    const ibSorted = [...ORB.ib].sort((a,b) => (b[isAnr?key:'n']||0) - (a[isAnr?key:'n']||0));
+    chartIB.data.labels              = ibSorted.map(i => i.beneficiario);
+    chartIB.data.datasets[0].data   = ibSorted.map(i => isAnr ? (i[key]||0) : (i.n||0));
+    chartIB.data.datasets[0].label  = isAnr ? (isReal ? 'ANR real pesos '+ORB_IPC_FECHA : 'ANR nominal ($)') : 'Documentos';
+    chartIB.options.scales.y.ticks.callback = isAnr ? v => fmtM(v) : v => v;
+    chartIB.update();
+    const ibSub = document.getElementById('orb-ib-sublabel');
+    if (ibSub) ibSub.textContent = isAnr ? chartIB.data.datasets[0].label : 'Documentos por IB';
+  }
+
+  /* ── Años chart ── */
+  if (chartAnios) {
+    if (isAnr) {
+      chartAnios.data.datasets[2] = {
+        label: isReal ? 'ANR real ($M)' : 'ANR nominal ($M)',
+        data:  ORB.anio.map(d => ((d[key]||0)/1e6).toFixed(1)),
+        backgroundColor: isReal ? C.green+'55' : C.navy+'44',
+        borderColor:     isReal ? C.green : C.navy,
+        borderWidth: 1, borderRadius: 4, type:'bar', yAxisID:'y2'
+      };
+    } else {
+      chartAnios.data.datasets = chartAnios.data.datasets.slice(0, 2);
+    }
+    chartAnios.update();
+    const anioSub = document.getElementById('orb-anio-sublabel');
+    if (anioSub) {
+      anioSub.textContent = isAnr
+        ? (isReal ? 'ANR real pesos '+ORB_IPC_FECHA : 'ANR nominal')
+        : 'Año de redacción';
+    }
+  }
+
+  /* ── Línea sidebar text ── */
+  document.querySelectorAll('.orb-linea-anr').forEach(el => {
+    const row = ORB.linea.find(l => l.linea === el.dataset.linea);
+    if (!row) return;
+    el.textContent = isAnr ? ('ANR: '+fmtM(row[key]||0)) : (row.n+' documentos');
+  });
+
+  /* ── Tabla documentos: columna ANR ── */
+  const anrHdr = document.getElementById('orb-table-anr-header');
+  if (anrHdr) {
+    anrHdr.textContent = isAnr ? (isReal ? 'ANR real ('+ORB_IPC_FECHA+')' : 'ANR nominal') : 'ANR';
+  }
+  document.querySelectorAll('.orb-table-anr').forEach(el => {
+    const nom  = parseFloat(el.dataset.nom  || 0);
+    const real = parseFloat(el.dataset.real || 0);
+    if (!isAnr) {
+      el.textContent = nom > 0 ? '$'+(nom/1e6).toFixed(1)+'M' : '—';
+      el.style.color = '';
+    } else {
+      const val = isReal ? real : nom;
+      el.textContent = val > 0 ? fmtM(val) : '—';
+      el.style.color = isReal ? 'var(--green)' : '';
+    }
+  });
+
+  /* ── Tabla detalle por IB: columna ANR ── */
+  const ibTblHdr = document.getElementById('orb-ib-tbl-hdr');
+  if (ibTblHdr) {
+    ibTblHdr.textContent = isReal ? 'ANR real ('+ORB_IPC_FECHA+')' : 'ANR total';
+  }
+  document.querySelectorAll('.orb-ib-anr').forEach(el => {
+    const nom  = parseFloat(el.dataset.nom  || 0);
+    const real = parseFloat(el.dataset.real || 0);
+    const val  = isReal ? real : nom;
+    el.textContent = '$' + val.toFixed(1) + 'M';
+    el.style.color = isReal ? 'var(--green)' : '';
+  });
+}
+
+/* ── Build charts ── */
+function buildOrbCharts() {
+  chartLinea = new Chart(document.getElementById('chart-linea'), {
+    type: 'doughnut',
+    data: {
+      labels: ORB.linea.map(l => l.linea),
+      datasets: [{ data: ORB.linea.map(l => l.n),
+        backgroundColor: lineaColors, borderWidth:3, borderColor:'#fff' }]
+    },
+    options: { responsive:true, maintainAspectRatio:false, cutout:'60%',
+               plugins:{legend:{position:'right'}} }
+  });
+
+  chartIB = new Chart(document.getElementById('chart-ib'), {
+    type: 'bar',
+    data: {
+      labels: ORB.ib.map(i => i.beneficiario),
+      datasets: [{ label:'Documentos', data: ORB.ib.map(i => i.n),
+        backgroundColor: C.purple+'BB', borderColor:C.purple, borderWidth:2, borderRadius:5 }]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false} },
+      scales: { y:{beginAtZero:true, grid:{color:'#EEF1F5'}}, x:{grid:{display:false}} }
+    }
+  });
+
+  const anios = [...new Set(ORB.anio.map(d => d.anio_red))].sort();
+  chartAnios = new Chart(document.getElementById('chart-anios'), {
+    type: 'bar',
+    data: {
+      labels: anios,
+      datasets: [
+        { label:'Redactados',
+          data: anios.map(a => { const r=ORB.anio.find(d=>d.anio_red==a); return r?r.n:0; }),
+          backgroundColor:C.navy+'BB', borderColor:C.navy, borderWidth:2, borderRadius:4,
+          stack:'s', yAxisID:'y' },
+        { label:'Publicados',
+          data: anios.map(a => { const r=ORB.anio.find(d=>d.anio_red==a); return r?r.publicados:0; }),
+          backgroundColor:C.green+'BB', borderColor:C.green, borderWidth:2, borderRadius:4,
+          stack:'s2', yAxisID:'y' },
+      ]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{position:'top'} },
+      scales: {
+        x:{ grid:{display:false} },
+        y:{ beginAtZero:true, grid:{color:'#EEF1F5'}, ticks:{stepSize:1},
+            title:{display:true,text:'Documentos'} },
+        y2:{ beginAtZero:true, position:'right', grid:{display:false},
+             ticks:{callback:v=>'$'+v+'M'}, title:{display:true,text:'ANR ($M)'} }
+      }
+    }
+  });
+}
+
+/* ── Live filter ── */
+function filterOrb() {
+  const q  = document.getElementById('orb-search').value.toLowerCase();
+  const l  = document.getElementById('orb-linea').value;
+  const e  = document.getElementById('orb-estado').value;
+  const ib = document.getElementById('orb-ib').value;
+  let vis = 0;
+  document.querySelectorAll('#orb-table tbody tr').forEach(row => {
+    const ok = (!q  || row.dataset.titulo.includes(q))
+            && (!l  || row.dataset.linea  === l)
+            && (!e  || row.dataset.estado === e)
+            && (!ib || row.dataset.ib     === ib);
+    row.style.display = ok ? '' : 'none';
+    if (ok) vis++;
+  });
+  const cnt = document.getElementById('orb-count');
+  if (cnt) cnt.textContent = vis + ' documentos';
+}
+['orb-search','orb-linea','orb-estado','orb-ib'].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener(id==='orb-search' ? 'input' : 'change', filterOrb);
+});
+
+document.addEventListener('DOMContentLoaded', buildOrbCharts);
+</script>
+{% endblock %}

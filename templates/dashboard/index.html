@@ -1,0 +1,256 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block breadcrumb %}Dashboard{% endblock %}
+
+{% block topbar_actions %}
+  <!-- IPC toggle global -->
+  <div style="display:flex;align-items:center;gap:8px;background:var(--surface-2);border:1.5px solid var(--border);border-radius:8px;padding:5px 10px;">
+    <span class="material-icons-round" style="font-size:15px;color:var(--text-muted);">trending_up</span>
+    <div style="line-height:1.3;">
+      <div style="font-size:11px;font-weight:700;color:var(--text-mid);">Precios reales</div>
+      <div style="font-size:10px;color:var(--text-muted);">valuación: {{ ipc_fecha_val }}</div>
+    </div>
+    <label class="toggle-switch" title="Ver ANR en términos reales (IPC {{ ipc_fecha_val }})">
+      <input type="checkbox" id="dash-ipc-toggle" onchange="dashSwitchIPC(this.checked)">
+      <span class="toggle-slider"></span>
+    </label>
+    <span id="dash-ipc-label" style="font-size:11px;font-weight:600;color:var(--text-muted);min-width:44px;">nominal</span>
+  </div>
+  {% if can_edit() %}
+  <a href="{{ url_for('proyectos.nuevo') }}" class="btn btn-primary btn-sm">
+    <span class="material-icons-round">add</span> Nuevo Proyecto
+  </a>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+<!-- Stat cards -->
+<div class="stat-grid">
+  <div class="stat-card">
+    <div class="stat-icon blue"><span class="material-icons-round">rocket_launch</span></div>
+    <div>
+      <div class="stat-value">{{ total_proyectos }}</div>
+      <div class="stat-label">Proyectos totales</div>
+      <div class="stat-sub">{{ proyectos_activos }} activos</div>
+    </div>
+  </div>
+  <div class="stat-card" id="dash-anr-card" style="border:1.5px solid transparent;transition:border-color .2s;">
+    <div class="stat-icon gold"><span class="material-icons-round">payments</span></div>
+    <div>
+      <div id="dash-anr-val" class="stat-value" style="font-size:20px;">${{ "%.1f"|format(total_anr/1e9) }}MM</div>
+      <div id="dash-anr-label" class="stat-label">ANR total comprometido</div>
+      <div id="dash-anr-sub" class="stat-sub" style="font-size:10px;color:var(--text-muted);margin-top:3px;"></div>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon green"><span class="material-icons-round">folder_special</span></div>
+    <div>
+      <div class="stat-value">{{ programas|length }}</div>
+      <div class="stat-label">Programas activos</div>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon purple"><span class="material-icons-round">check_circle</span></div>
+    <div>
+      {% set finalizados = namespace(n=0) %}
+      {% for s in estados_data %}{% if s.estado == 'finalizado' %}{% set finalizados.n = s.n %}{% endif %}{% endfor %}
+      <div class="stat-value">{{ finalizados.n }}</div>
+      <div class="stat-label">Proyectos finalizados</div>
+    </div>
+  </div>
+</div>
+
+<div class="grid-2 mb-3">
+  <!-- Programas overview -->
+  <div>
+    <div class="section-title">Programas</div>
+    <div style="display:flex;flex-direction:column;gap:12px;">
+      {% for p in programas %}
+      {% set s = stats[p.id] %}
+      <a href="{{ url_for('programas.detail', pid=p.id) }}" style="text-decoration:none;color:inherit;">
+        <div class="card" style="padding:16px 20px;">
+          <div style="display:flex;align-items:center;gap:14px;">
+            <div style="width:40px;height:40px;border-radius:8px;background:var(--teal);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+              <span class="material-icons-round" style="color:#fff;font-size:18px;">{{ p.icono }}</span>
+            </div>
+            <div style="flex:1;min-width:0;">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                <div>
+                  <span style="font-weight:700;font-family:'Encode Sans',sans-serif;font-size:14px;">{{ p.codigo }}</span>
+                  <span class="text-muted text-sm" style="margin-left:6px;">{{ s.total }} proyectos</span>
+                </div>
+                <span class="dash-prog-anr text-sm"
+                      data-prog="{{ p.id }}"
+                      data-nom="{{ s.anr|int }}"
+                      data-real="{{ ipc_stats.get(p.id, s.anr)|int }}"
+                      style="font-weight:600;color:var(--text-mid);">
+                  ${{ "%.0f"|format((s.anr or 0)/1e6) }}M
+                </span>
+              </div>
+              <div class="progress-bar mt-1">
+                {% if s.total > 0 %}
+                <div class="progress-fill" style="width:{{ (s.finalizados/s.total*100)|int }}%;background:var(--teal);"></div>
+                {% else %}
+                <div class="progress-fill" style="width:0;"></div>
+                {% endif %}
+              </div>
+              <div class="text-sm text-muted mt-1">{{ s.activos }} activos · {{ s.finalizados }} finalizados</div>
+            </div>
+          </div>
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Charts -->
+  <div style="display:flex;flex-direction:column;gap:16px;">
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title" id="dash-chart-prog-title">Proyectos por programa</span>
+      </div>
+      <div class="card-body">
+        <div class="chart-wrap"><canvas id="chart-programas"></canvas></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Estado de proyectos</span>
+      </div>
+      <div class="card-body">
+        <div class="chart-wrap-sm"><canvas id="chart-estados"></canvas></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Últimas novedades -->
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Últimas novedades</span>
+    <a href="{{ url_for('proyectos.list') }}" class="btn btn-secondary btn-sm">Ver todos →</a>
+  </div>
+  <div class="card-body" style="padding:14px 20px;">
+    {% if ultimas_novedades %}
+    {% for nov in ultimas_novedades %}
+    <div class="novedad-pill">
+      <div class="novedad-tag" style="background:var(--teal);"></div>
+      <div style="flex:1;min-width:0;">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span style="font-weight:600;font-size:13.5px;">{{ nov.titulo }}</span>
+          <span class="badge badge-{{ nov.tipo }}">{{ nov.tipo|replace('_',' ') }}</span>
+        </div>
+        <div class="feed-meta">
+          <span class="tag">{{ nov.programa_codigo }}</span>
+          <span style="margin:0 4px">·</span>
+          {{ nov.proyecto_nombre }} · {{ nov.fecha or '' }}
+          {% if nov.agente_nombre %} · {{ nov.agente_nombre }} {{ nov.agente_apellido }}{% endif %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+    {% else %}
+    <p class="text-muted text-sm" style="padding:16px 0;">No hay novedades registradas aún.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const DASH_DATA = {
+  programas:    {{ por_programa_ipc|tojson }},
+  estados:      {{ estados_data|tojson }},
+  total_nom:    {{ total_anr }},
+  total_real:   {{ total_anr_real }},
+  ipc_fecha:    {{ ipc_fecha_val|tojson }}
+};
+
+function fmtM(v) {
+  if (v >= 1e9) return '$'+(v/1e9).toFixed(1)+'MM';
+  if (v >= 1e6) return '$'+(v/1e6).toFixed(0)+'M';
+  return '$'+Math.round(v).toLocaleString('es-AR');
+}
+
+let dashReal = false;
+let chartProg = null;
+
+/* Build charts */
+const estadosLabels = {activo:'Activo', finalizado:'Finalizado', suspendido:'Suspendido', en_evaluacion:'En evaluación', en_finalizacion:'Finalizando'};
+const estadosColors = {activo:'#1A9E5C', finalizado:'#00AEC3', suspendido:'#C0392B', en_evaluacion:'#E0A800', en_finalizacion:'#E65100'};
+
+chartProg = new Chart(document.getElementById('chart-programas'), {
+  type:'bar',
+  data:{
+    labels: DASH_DATA.programas.map(p=>p.codigo||p.nombre),
+    datasets:[{
+      label:'Proyectos',
+      data:  DASH_DATA.programas.map(p=>p.n||p.total||0),
+      backgroundColor: '#00AEC3CC',
+      borderColor:     '#00AEC3',
+      borderWidth:2, borderRadius:6
+    }]
+  },
+  options:{
+    responsive:true, maintainAspectRatio:false,
+    plugins:{legend:{display:false}},
+    scales:{
+      y:{beginAtZero:true, grid:{color:'#EEF1F5'}, ticks:{stepSize:1}},
+      x:{grid:{display:false}}
+    }
+  }
+});
+
+new Chart(document.getElementById('chart-estados'), {
+  type:'doughnut',
+  data:{
+    labels: DASH_DATA.estados.map(e=>estadosLabels[e.estado]||e.estado),
+    datasets:[{
+      data: DASH_DATA.estados.map(e=>e.n),
+      backgroundColor: DASH_DATA.estados.map(e=>estadosColors[e.estado]||'#666'),
+      borderWidth:3, borderColor:'#fff'
+    }]
+  },
+  options:{responsive:true, maintainAspectRatio:false, cutout:'65%', plugins:{legend:{position:'right'}}}
+});
+
+/* IPC toggle for dashboard */
+function dashSwitchIPC(isReal) {
+  dashReal = isReal;
+  document.getElementById('dash-ipc-label').textContent = isReal ? 'real' : 'nominal';
+
+  /* KPI card */
+  const val = isReal ? DASH_DATA.total_real : DASH_DATA.total_nom;
+  document.getElementById('dash-anr-val').textContent = fmtM(val);
+  document.getElementById('dash-anr-label').textContent = isReal
+    ? ('ANR real pesos '+DASH_DATA.ipc_fecha)
+    : 'ANR total comprometido';
+  document.getElementById('dash-anr-sub').textContent = isReal
+    ? ('nominal: '+fmtM(DASH_DATA.total_nom))
+    : '';
+  const card = document.getElementById('dash-anr-card');
+  card.style.borderColor = isReal ? 'var(--teal)' : 'transparent';
+
+  /* Per-program ANR labels */
+  document.querySelectorAll('.dash-prog-anr').forEach(el=>{
+    const v = isReal ? parseInt(el.dataset.real||0) : parseInt(el.dataset.nom||0);
+    el.textContent = fmtM(v);
+    el.style.color = isReal ? 'var(--teal)' : 'var(--text-mid)';
+  });
+
+  /* Chart: switch between count and ANR */
+  if (isReal) {
+    chartProg.data.datasets[0].label = 'ANR real ($M)';
+    chartProg.data.datasets[0].data  = DASH_DATA.programas.map(p=>(p.anr_real||0)/1e6);
+    chartProg.options.scales.y.ticks = {callback: v=>'$'+v+'M'};
+    document.getElementById('dash-chart-prog-title').textContent = 'ANR real por programa (pesos '+DASH_DATA.ipc_fecha+')';
+  } else {
+    chartProg.data.datasets[0].label = 'Proyectos';
+    chartProg.data.datasets[0].data  = DASH_DATA.programas.map(p=>p.n||p.total||0);
+    chartProg.options.scales.y.ticks = {stepSize:1};
+    document.getElementById('dash-chart-prog-title').textContent = 'Proyectos por programa';
+  }
+  chartProg.update();
+}
+</script>
+{% endblock %}

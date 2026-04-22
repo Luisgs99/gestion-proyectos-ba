@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}{% if inst %}Editar — {{ inst.nombre }}{% else %}Nueva institución{% endif %}{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('instituciones.list') }}" style="color:var(--text-muted);text-decoration:none;">Instituciones</a>
+  {% if inst %}/ <a href="{{ url_for('instituciones.detail', iid=inst.id) }}" style="color:var(--text-muted);text-decoration:none;">{{ inst.nombre }}</a>{% endif %}
+  / {% if inst %}Editar{% else %}Nueva{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width:720px;">
+  <div class="card-header">
+    <span>{% if inst %}Editar institución{% else %}Nueva institución{% endif %}</span>
+  </div>
+  <div class="card-body">
+    <form method="post">
+      <div class="grid-2 mb-2">
+        <div>
+          <label class="form-label">Nombre completo *</label>
+          <input type="text" name="nombre" class="form-control" required
+                 value="{{ inst.nombre if inst else '' }}" placeholder="Universidad Nacional de La Plata">
+        </div>
+        <div>
+          <label class="form-label">Sigla / nombre corto</label>
+          <input type="text" name="nombre_corto" class="form-control"
+                 value="{{ inst.nombre_corto if inst and inst.nombre_corto else '' }}" placeholder="UNLP">
+        </div>
+      </div>
+      <div class="grid-2 mb-2">
+        <div>
+          <label class="form-label">Tipo</label>
+          <select name="tipo" class="form-control">
+            {% for t in tipos %}
+            <option value="{{ t }}" {% if inst and inst.tipo == t %}selected{% endif %}>{{ t|capitalize }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="form-label">CUIT</label>
+          <input type="text" name="cuit" class="form-control"
+                 value="{{ inst.cuit if inst and inst.cuit else '' }}" placeholder="30-12345678-9">
+        </div>
+      </div>
+      <div class="grid-3 mb-2">
+        <div>
+          <label class="form-label">Municipio</label>
+          <input type="text" name="municipio" class="form-control"
+                 value="{{ inst.municipio if inst and inst.municipio else '' }}">
+        </div>
+        <div>
+          <label class="form-label">Localidad</label>
+          <input type="text" name="localidad" class="form-control"
+                 value="{{ inst.localidad if inst and inst.localidad else '' }}">
+        </div>
+        <div>
+          <label class="form-label">Provincia</label>
+          <input type="text" name="provincia" class="form-control"
+                 value="{{ inst.provincia if inst and inst.provincia else 'Buenos Aires' }}">
+        </div>
+      </div>
+      <div class="mb-2">
+        <label class="form-label">Sitio web</label>
+        <input type="url" name="website" class="form-control"
+               value="{{ inst.website if inst and inst.website else '' }}" placeholder="https://…">
+      </div>
+      <div class="mb-2">
+        <label class="form-label">Descripción</label>
+        <textarea name="descripcion" class="form-control" rows="3">{{ inst.descripcion if inst and inst.descripcion else '' }}</textarea>
+      </div>
+      <div class="mb-2">
+        <label class="form-label">Estado del vínculo</label>
+        <select name="estado_vinculo" class="form-control">
+          {% for e in estados %}
+          <option value="{{ e }}" {% if inst and inst.estado_vinculo == e %}selected{% endif %}>{{ e|replace('_',' ')|capitalize }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Notas sobre el vínculo / situación política</label>
+        <textarea name="notas_vinculo" class="form-control" rows="4"
+                  placeholder="Contexto del vínculo, estado de la relación institucional, notas internas…">{{ inst.notas_vinculo if inst and inst.notas_vinculo else '' }}</textarea>
+      </div>
+      <div style="display:flex;gap:10px;">
+        <button type="submit" class="btn btn-primary">Guardar</button>
+        {% if inst %}
+        <a href="{{ url_for('instituciones.detail', iid=inst.id) }}" class="btn btn-secondary">Cancelar</a>
+        {% else %}
+        <a href="{{ url_for('instituciones.list') }}" class="btn btn-secondary">Cancelar</a>
+        {% endif %}
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

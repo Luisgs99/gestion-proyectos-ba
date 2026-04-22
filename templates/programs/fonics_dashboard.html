@@ -1,0 +1,367 @@
+{% extends "base.html" %}
+{% block title %}FONICS — Dashboard{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('programas.list') }}" style="color:var(--text-muted);text-decoration:none;">Programas</a>
+  / FONICS
+{% endblock %}
+
+{% block topbar_actions %}
+  <div style="display:flex;align-items:center;gap:2px;background:var(--surface-2);border:1.5px solid var(--border);border-radius:8px;padding:3px;">
+    <button id="fn-btn-n"    class="metric-btn metric-btn-active" onclick="fnSetMode('n')">Proyectos</button>
+    <button id="fn-btn-nom"  class="metric-btn"                   onclick="fnSetMode('nom')">ANR nominal</button>
+    <button id="fn-btn-real" class="metric-btn"                   onclick="fnSetMode('real')">ANR real <span style="font-size:9px;opacity:.7;">{{ ipc_fecha_val }}</span></button>
+  </div>
+  {% if can_edit() %}
+  <a href="{{ url_for('proyectos.nuevo') }}?programa={{ programa.id }}" class="btn btn-primary btn-sm">
+    <span class="material-icons-round">add</span> Nuevo Proyecto
+  </a>
+  {% endif %}
+  <a href="{{ url_for('reportes.exportar') }}?programa_id={{ programa.id }}" class="btn btn-secondary btn-sm">
+    <span class="material-icons-round">download</span> Exportar Excel
+  </a>
+  <a href="{{ url_for('reportes.ipc') }}" class="btn btn-secondary btn-sm" title="Herramienta IPC">
+    <span class="material-icons-round">calculate</span>
+  </a>
+{% endblock %}
+
+{% block content %}
+
+<!-- Header -->
+<div style="background:linear-gradient(135deg,#1B5E20 0%,#388E3C 60%,#66BB6A 100%);border-radius:14px;padding:26px 32px;margin-bottom:24px;color:#fff;position:relative;overflow:hidden;">
+  <div style="position:absolute;right:-40px;top:-40px;width:200px;height:200px;border-radius:50%;background:rgba(255,255,255,.06);"></div>
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:20px;flex-wrap:wrap;position:relative;z-index:1;">
+    <div>
+      <div style="font-size:11px;opacity:.6;margin-bottom:6px;letter-spacing:.1em;text-transform:uppercase;font-family:'Encode Sans',sans-serif;">Programa</div>
+      <h1 style="font-family:'Encode Sans',sans-serif;font-size:28px;font-weight:800;margin-bottom:4px;">FONICS</h1>
+      <p style="opacity:.75;font-size:14px;">Fondo de Innovación para Científicos</p>
+    </div>
+    <div style="display:flex;gap:24px;text-align:center;flex-wrap:wrap;">
+      <div>
+        <div style="font-family:'Encode Sans',sans-serif;font-size:38px;font-weight:800;line-height:1;">{{ total }}</div>
+        <div style="font-size:12px;opacity:.65;margin-top:2px;">proyectos</div>
+      </div>
+      <div style="border-left:1px solid rgba(255,255,255,.2);padding-left:24px;">
+        <div style="font-family:'Encode Sans',sans-serif;font-size:38px;font-weight:800;line-height:1;">{{ activos }}</div>
+        <div style="font-size:12px;opacity:.65;margin-top:2px;">activos</div>
+      </div>
+      <div style="border-left:1px solid rgba(255,255,255,.2);padding-left:24px;">
+        <div style="font-family:'Encode Sans',sans-serif;font-size:38px;font-weight:800;line-height:1;">
+          <span id="fn-hdr-nom">${{ "%.1f"|format(total_anr/1e6) }}M</span>
+          <span id="fn-hdr-real" style="display:none;">${{ "%.1f"|format(total_anr_real/1e6) }}M</span>
+        </div>
+        <div id="fn-hdr-label" style="font-size:12px;opacity:.65;margin-top:2px;">ANR total</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- KPI cards -->
+<div class="stat-grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr));margin-bottom:24px;">
+  <div class="stat-card">
+    <div class="stat-icon green"><span class="material-icons-round">play_circle</span></div>
+    <div><div class="stat-value">{{ activos }}</div><div class="stat-label">En ejecución</div></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon blue"><span class="material-icons-round">check_circle</span></div>
+    <div><div class="stat-value">{{ finalizados }}</div><div class="stat-label">Finalizados</div></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon red"><span class="material-icons-round">pause_circle</span></div>
+    <div><div class="stat-value">{{ suspendidos }}</div><div class="stat-label">Suspendidos</div></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon gold"><span class="material-icons-round">payments</span></div>
+    <div>
+      <div id="fn-kpi-anr" class="stat-value" style="font-size:18px;">${{ "%.1f"|format(total_anr/1e6) }}M</div>
+      <div class="stat-label">ANR comprometido</div>
+    </div>
+  </div>
+</div>
+
+<!-- Tabs -->
+<div class="tabs-container">
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="proyectos">Proyectos ({{ total }})</button>
+    <button class="tab-btn" data-tab="estadisticas">Estadísticas</button>
+    <button class="tab-btn" data-tab="hitos">Avance por Hitos</button>
+  </div>
+
+  <!-- Proyectos -->
+  <div class="tab-content active" data-tab-content="proyectos">
+    {% if proyectos %}
+    <div class="card">
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Proyecto</th>
+              <th>Beneficiario</th>
+              <th>Municipio</th>
+              <th class="fn-col-n">Proyectos</th>
+              <th class="fn-col-nom" style="display:none;">ANR nominal</th>
+              <th class="fn-col-real" style="display:none;">ANR real {{ ipc_fecha_val }}</th>
+              <th>Avance</th>
+              <th>Estado</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in proyectos %}
+            <tr>
+              <td>
+                <div style="font-weight:600;font-size:13.5px;">{{ p.nombre }}</div>
+                {% if p.codigo %}<div class="mono text-muted">{{ p.codigo }}</div>{% endif %}
+              </td>
+              <td>{{ p.beneficiario or '—' }}</td>
+              <td>{{ p.municipio or '—' }}</td>
+              <td class="fn-col-n"><span class="badge badge-activo">1</span></td>
+              <td class="fn-col-nom" style="display:none;"><span class="mono">${{ "{:,.0f}".format(p.anr_monto or 0) }}</span></td>
+              <td class="fn-col-real" style="display:none;"><span class="mono text-muted">—</span></td>
+              <td>
+                <div style="min-width:80px;">
+                  <div class="progress-bar" style="margin-bottom:3px;">
+                    <div class="progress-fill" style="width:{{ p.porcentaje_avance or 0 }}%;background:{{ programa.color }};"></div>
+                  </div>
+                  <div class="text-sm text-muted">{{ p.porcentaje_avance or 0 }}%</div>
+                </div>
+              </td>
+              <td><span class="badge badge-{{ p.estado }}">{{ p.estado|replace('_',' ') }}</span></td>
+              <td>
+                <a href="{{ url_for('proyectos.detail', pid=p.id) }}" class="btn btn-secondary btn-sm btn-icon">
+                  <span class="material-icons-round">open_in_new</span>
+                </a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% else %}
+    <div class="card card-body" style="text-align:center;padding:40px;">
+      <span class="material-icons-round" style="font-size:40px;color:var(--text-muted);display:block;margin-bottom:12px;">science</span>
+      <p class="text-muted">No hay proyectos en FONICS todavía.</p>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Estadísticas -->
+  <div class="tab-content" data-tab-content="estadisticas">
+    <div class="grid-2 mb-3">
+      <div class="card">
+        <div class="card-header"><span class="card-title">Estado de proyectos</span></div>
+        <div class="card-body"><div class="chart-wrap"><canvas id="chart-estados"></canvas></div></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">Proyectos por municipio</span></div>
+        <div class="card-body"><div class="chart-wrap"><canvas id="chart-municipios"></canvas></div></div>
+      </div>
+    </div>
+    <div class="grid-2 mb-3">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Evolución anual</span>
+          <span id="fn-chart-anio-title" class="text-sm text-muted">Proyectos</span>
+        </div>
+        <div class="card-body"><div class="chart-wrap-lg"><canvas id="chart-anio"></canvas></div></div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title" id="fn-chart-ib-title">Top beneficiarios por proyectos</span>
+        </div>
+        <div class="card-body"><div class="chart-wrap-lg"><canvas id="chart-ib"></canvas></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hitos -->
+  <div class="tab-content" data-tab-content="hitos">
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Avance global por hito</span>
+        <span class="text-sm text-muted">Proyectos que completaron cada hito</span>
+      </div>
+      <div class="card-body">
+        {% if total > 0 %}
+        <div class="chart-wrap-lg mb-3"><canvas id="chart-hitos"></canvas></div>
+        {% endif %}
+        <div class="section-title mt-2">Detalle por hito</div>
+        <div class="hitos-list">
+          {% for h in hitos %}
+          {% set completados_h = avances_por_hito.get(h.id, 0) %}
+          {% set pct_h = (completados_h / total * 100)|int if total > 0 else 0 %}
+          <div class="hito-item">
+            <div class="hito-dot {% if pct_h == 100 %}completado{% elif pct_h > 0 %}en_proceso{% else %}pendiente{% endif %}">
+              <span class="material-icons-round" style="font-size:14px;">
+                {% if pct_h == 100 %}check{% elif pct_h > 0 %}hourglass_empty{% else %}radio_button_unchecked{% endif %}
+              </span>
+            </div>
+            <div class="hito-info">
+              <div class="hito-nombre">{{ loop.index }}. {{ h.nombre }}</div>
+              <div class="hito-meta">{{ completados_h }} de {{ total }} proyectos completaron este hito</div>
+              <div class="progress-bar mt-1" style="height:4px;max-width:300px;">
+                <div class="progress-fill" style="width:{{ pct_h }}%;background:{{ programa.color }};"></div>
+              </div>
+            </div>
+            <div style="font-family:'Sora',sans-serif;font-weight:700;font-size:16px;color:{{ programa.color }};">{{ pct_h }}%</div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const FN = {
+  estados:    {{ estados_dist|tojson }},
+  municipios: {{ por_municipio|tojson }},
+  anio:       {{ por_anio|tojson }},
+  ib:         {{ por_ib|tojson }},
+  total_nom:  {{ total_anr }},
+  total_real: {{ total_anr_real }},
+  ipc_fecha:  {{ ipc_fecha_val|tojson }},
+};
+const FN_COLOR = '{{ programa.color }}';
+
+let fnMode = 'n';
+let chartAnio = null;
+let chartIB   = null;
+
+/* ── Estado ── */
+const estadosLabels = {activo:'Activo',finalizado:'Finalizado',suspendido:'Suspendido',en_evaluacion:'En evaluación'};
+new Chart(document.getElementById('chart-estados'), {
+  type:'doughnut',
+  data:{
+    labels: FN.estados.map(e=>estadosLabels[e.estado]||e.estado),
+    datasets:[{data:FN.estados.map(e=>e.n),
+               backgroundColor:['#22A954','#00AEC3','#D32F2F','#F5A623'],
+               borderWidth:3, borderColor:'#fff'}]
+  },
+  options:{responsive:true,maintainAspectRatio:false,cutout:'60%',plugins:{legend:{position:'right'}}}
+});
+
+/* ── Municipios ── */
+if (FN.municipios.length) {
+  new Chart(document.getElementById('chart-municipios'), {
+    type:'bar',
+    data:{
+      labels: FN.municipios.map(m=>m.municipio),
+      datasets:[{data:FN.municipios.map(m=>m.n),
+                 backgroundColor:FN_COLOR+'BB',borderColor:FN_COLOR,borderWidth:2,borderRadius:5}]
+    },
+    options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',
+             plugins:{legend:{display:false}},
+             scales:{x:{beginAtZero:true,grid:{color:'#EEF1F5'}},y:{grid:{display:false}}}}
+  });
+}
+
+/* ── Año ── */
+function buildAnioChart(mode) {
+  const data = mode==='n' ? FN.anio.map(r=>r.n)
+             : mode==='nom' ? FN.anio.map(r=>r.total_anr/1e6)
+             : FN.anio.map(r=>r.total_real/1e6);
+  const label = mode==='n' ? 'Proyectos' : mode==='nom' ? 'ANR nominal ($M)' : `ANR real ${FN.ipc_fecha} ($M)`;
+  if (!chartAnio) {
+    chartAnio = new Chart(document.getElementById('chart-anio'), {
+      type:'bar',
+      data:{
+        labels: FN.anio.map(r=>r.anio),
+        datasets:[{label, data, backgroundColor:FN_COLOR+'BB',borderColor:FN_COLOR,borderWidth:2,borderRadius:6}]
+      },
+      options:{responsive:true,maintainAspectRatio:false,
+               plugins:{legend:{display:false}},
+               scales:{y:{beginAtZero:true,grid:{color:'#EEF1F5'},
+                          ticks:{callback:v=>mode==='n'?v:'$'+v+'M'}},
+                       x:{grid:{display:false}}}}
+    });
+  } else {
+    chartAnio.data.datasets[0].data  = data;
+    chartAnio.data.datasets[0].label = label;
+    chartAnio.options.scales.y.ticks = {callback:v=>mode==='n'?v:'$'+v+'M'};
+    chartAnio.update();
+  }
+  document.getElementById('fn-chart-anio-title').textContent = label;
+}
+
+/* ── IB ── */
+function buildIBChart(mode) {
+  const data = mode==='n' ? FN.ib.map(r=>r.n)
+             : mode==='nom' ? FN.ib.map(r=>r.total_anr/1e6)
+             : FN.ib.map(r=>r.total_real/1e6);
+  const label = mode==='n' ? 'Proyectos' : mode==='nom' ? 'ANR nominal ($M)' : `ANR real ($M)`;
+  if (!chartIB) {
+    chartIB = new Chart(document.getElementById('chart-ib'), {
+      type:'bar',
+      data:{
+        labels: FN.ib.map(r=>(r.beneficiario||'').slice(0,30)),
+        datasets:[{label, data, backgroundColor:FN_COLOR+'AA',borderColor:FN_COLOR,borderWidth:2,borderRadius:5}]
+      },
+      options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',
+               plugins:{legend:{display:false}},
+               scales:{x:{beginAtZero:true,grid:{color:'#EEF1F5'},
+                          ticks:{callback:v=>mode==='n'?v:'$'+v+'M'}},
+                       y:{grid:{display:false},ticks:{font:{size:11}}}}}
+    });
+  } else {
+    chartIB.data.datasets[0].data  = data;
+    chartIB.data.datasets[0].label = label;
+    chartIB.update();
+  }
+  document.getElementById('fn-chart-ib-title').textContent =
+    mode==='n' ? 'Top beneficiarios por proyectos' : `Top beneficiarios por ${label}`;
+}
+
+buildAnioChart('n');
+buildIBChart('n');
+
+/* ── Hitos ── */
+{% if total > 0 %}
+const hitosLabels = {{ hitos|map(attribute='nombre')|list|tojson }};
+const hitosVals   = {{ hitos|map(attribute='id')|list|tojson }}.map(id=>{{ avances_por_hito|tojson }}[id]||0);
+new Chart(document.getElementById('chart-hitos'), {
+  type:'bar',
+  data:{
+    labels: hitosLabels.map((h,i)=>(i+1)+'. '+h),
+    datasets:[
+      {label:'Completados', data:hitosVals, backgroundColor:FN_COLOR+'CC', borderColor:FN_COLOR, borderWidth:2, borderRadius:5},
+      {label:'Total',       data:hitosLabels.map(()=>{{ total }}), backgroundColor:'#EEF1F5', borderColor:'#DDE3EC', borderWidth:1, borderRadius:5}
+    ]
+  },
+  options:{responsive:true,maintainAspectRatio:false,
+           plugins:{legend:{position:'top'}},
+           scales:{y:{beginAtZero:true,max:{{ total }},grid:{color:'#EEF1F5'}},
+                   x:{grid:{display:false},ticks:{maxRotation:45}}}}
+});
+{% endif %}
+
+/* ── Mode switch ── */
+function fnSetMode(mode) {
+  fnMode = mode;
+  ['n','nom','real'].forEach(m=>{
+    document.getElementById('fn-btn-'+m).classList.toggle('metric-btn-active', m===mode);
+  });
+
+  /* Header ANR */
+  document.getElementById('fn-hdr-nom').style.display  = mode==='real'?'none':'';
+  document.getElementById('fn-hdr-real').style.display = mode==='real'?'':'none';
+  document.getElementById('fn-hdr-label').textContent  =
+    mode==='real' ? `ANR real ${FN.ipc_fecha}` : 'ANR total';
+
+  /* KPI */
+  const v = mode==='real' ? FN.total_real : FN.total_nom;
+  document.getElementById('fn-kpi-anr').textContent = '$'+(v/1e6).toFixed(1)+'M';
+
+  /* Table columns */
+  document.querySelectorAll('.fn-col-n').forEach(el=>el.style.display=mode==='n'?'':'none');
+  document.querySelectorAll('.fn-col-nom').forEach(el=>el.style.display=mode==='nom'?'':'none');
+  document.querySelectorAll('.fn-col-real').forEach(el=>el.style.display=mode==='real'?'':'none');
+
+  /* Charts */
+  buildAnioChart(mode);
+  buildIBChart(mode);
+}
+</script>
+{% endblock %}

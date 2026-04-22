@@ -1,0 +1,1051 @@
+{% extends "base.html" %}
+{% block extra_head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+{% endblock %}
+{% block title %}FITBA — Dashboard{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('programas.list') }}" style="color:var(--text-muted);text-decoration:none;">Programas</a>
+  / FITBA
+{% endblock %}
+
+{% block topbar_actions %}
+  <!-- Selector de 3 opciones: Proyectos / ANR nominal / ANR real -->
+  <div style="display:flex;align-items:center;gap:2px;background:var(--surface-2);border:1.5px solid var(--border);border-radius:8px;padding:3px;" title="desembolso: feb(año conv.+1) · valuación: {{ ipc_fecha_val }}">
+    <button id="fitba-btn-n"   class="metric-btn metric-btn-active" onclick="fitbaSetMode('n')">Proyectos</button>
+    <button id="fitba-btn-nom" class="metric-btn"                   onclick="fitbaSetMode('nom')">ANR nominal</button>
+    <button id="fitba-btn-real" class="metric-btn"                  onclick="fitbaSetMode('real')">ANR real <span style="font-size:9px;opacity:.7;">{{ ipc_fecha_val }}</span></button>
+  </div>
+  {% if can_edit() %}
+  <a href="{{ url_for('proyectos.nuevo') }}?programa={{ programa.id }}" class="btn btn-primary btn-sm">
+    <span class="material-icons-round">add</span> Nuevo Proyecto
+  </a>
+  {% endif %}
+  <a href="{{ url_for('reportes.exportar') }}?programa_id={{ programa.id }}" class="btn btn-secondary btn-sm">
+    <span class="material-icons-round">download</span> Exportar Excel
+  </a>
+  <a href="{{ url_for('reportes.ipc') }}" class="btn btn-secondary btn-sm" title="Herramienta IPC completa">
+    <span class="material-icons-round">calculate</span>
+  </a>
+{% endblock %}
+
+{% block content %}
+
+<!-- ─── Header band ─────────────────────────────────────────────── -->
+<div style="background:linear-gradient(135deg,#1E325C 0%,#00AEC3 60%,#74C9E3 100%);border-radius:14px;padding:26px 32px;margin-bottom:24px;color:#fff;position:relative;overflow:hidden;">
+  <div style="position:absolute;right:-40px;top:-40px;width:200px;height:200px;border-radius:50%;background:rgba(255,255,255,.06);"></div>
+  <div style="position:absolute;right:60px;bottom:-60px;width:140px;height:140px;border-radius:50%;background:rgba(255,255,255,.04);"></div>
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:20px;flex-wrap:wrap;position:relative;z-index:1;">
+    <div>
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;opacity:.6;margin-bottom:6px;letter-spacing:.1em;">PROGRAMA PRINCIPAL</div>
+      <h1 style="font-family:'Sora',sans-serif;font-size:28px;font-weight:800;letter-spacing:-.01em;margin-bottom:4px;">FITBA</h1>
+      <p style="opacity:.75;font-size:14px;">Fondo de Innovación Tecnológica de Buenos Aires</p>
+      <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">
+        <span style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);color:#fff;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;">Línea A · B · C</span>
+        <span style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);color:#fff;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;">2022 → 2025</span>
+      </div>
+    </div>
+    <div style="display:flex;gap:24px;text-align:center;flex-wrap:wrap;">
+      <div>
+        <div style="font-family:'Sora',sans-serif;font-size:38px;font-weight:800;line-height:1;">{{ total }}</div>
+        <div style="font-size:12px;opacity:.65;margin-top:2px;">proyectos</div>
+      </div>
+      <div style="border-left:1px solid rgba(255,255,255,.2);padding-left:24px;">
+        <div id="anr-header" style="font-family:'Sora',sans-serif;font-size:38px;font-weight:800;line-height:1;">
+          <span id="hdr-nom">${{ "%.1f"|format(total_anr/1e9) }}MM</span>
+          <span id="hdr-real" style="display:none;">${{ "%.1f"|format(total_anr_real/1e9) }}MM</span>
+        </div>
+        <div id="hdr-anr-label" style="font-size:12px;opacity:.65;margin-top:2px;">ANR comprometido</div>
+        <div id="hdr-ipc-note" style="display:none;font-size:10px;opacity:.5;margin-top:1px;">
+          desembolso: feb(conv+1) · val: {{ ipc_fecha_val }}
+        </div>
+      </div>
+      <div style="border-left:1px solid rgba(255,255,255,.2);padding-left:24px;">
+        <div style="font-family:'Sora',sans-serif;font-size:38px;font-weight:800;line-height:1;">{{ total_invest }}</div>
+        <div style="font-size:12px;opacity:.65;margin-top:2px;">investigadores</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── KPI cards ──────────────────────────────────────────────── -->
+<div class="stat-grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr));margin-bottom:24px;">
+  <div class="stat-card">
+    <div class="stat-icon green"><span class="material-icons-round">play_circle</span></div>
+    <div><div class="stat-value">{{ activos }}</div><div class="stat-label">En ejecución</div></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon blue"><span class="material-icons-round">check_circle</span></div>
+    <div><div class="stat-value">{{ finalizados }}</div><div class="stat-label">Finalizados</div></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon gold"><span class="material-icons-round">hourglass_bottom</span></div>
+    <div><div class="stat-value">{{ en_fin }}</div><div class="stat-label">En finalización</div></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon red"><span class="material-icons-round">cancel</span></div>
+    <div><div class="stat-value">{{ suspendidos }}</div><div class="stat-label">Rescindidos</div></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon orange"><span class="material-icons-round">groups</span></div>
+    <div>
+      <div class="stat-value">{{ total_mujeres }}</div>
+      <div class="stat-label">Investigadoras</div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Tabs ────────────────────────────────────────────────────── -->
+<div class="tabs-container">
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="overview">Visión general</button>
+    <button class="tab-btn" data-tab="territorio">Territorio</button>
+    <button class="tab-btn" data-tab="actores">Actores</button>
+    <button class="tab-btn" data-tab="mapa" id="tab-mapa-btn" onclick="onMapTabClick()">
+      <span class="material-icons-round" style="font-size:14px;vertical-align:middle;">map</span> Mapa
+    </button>
+    <button class="tab-btn" data-tab="proyectos">Proyectos ({{ total }})</button>
+  </div>
+
+  <!-- ── TAB: Visión general ─────────────────────────────────── -->
+  <div class="tab-content active" data-tab-content="overview">
+    <div class="grid-2 mb-3">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Proyectos por año y línea</span>
+          <span class="text-sm text-muted">Líneas A · B · C</span>
+        </div>
+        <div class="card-body"><div class="chart-wrap-lg"><canvas id="chart-anio-linea"></canvas></div></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">Estado de ejecución</span></div>
+        <div class="card-body">
+          <div class="chart-wrap"><canvas id="chart-estados"></canvas></div>
+          <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:14px;">
+            {% set estado_labels = {'activo':'En ejecución','finalizado':'Finalizado','en_finalizacion':'En finalización','suspendido':'Rescindido'} %}
+            {% set estado_colors = {'activo':'var(--green)','finalizado':'var(--blue)','en_finalizacion':'var(--gold)','suspendido':'var(--red)'} %}
+            {% for e in estados_dist %}
+            <div style="display:flex;align-items:center;gap:6px;">
+              <div style="width:10px;height:10px;border-radius:50%;background:{{ estado_colors.get(e.estado,'#aaa') }};flex-shrink:0;"></div>
+              <span class="text-sm"><strong>{{ e.n }}</strong> {{ estado_labels.get(e.estado, e.estado) }}</span>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid-2 mb-3">
+      <div class="card">
+        <div class="card-header"><span class="card-title">Distribución por Línea</span></div>
+        <div class="card-body">
+          <div class="chart-wrap-sm"><canvas id="chart-linea"></canvas></div>
+          <div style="margin-top:16px;">
+            {% set linea_colors = {'A':'#00AEC3','B':'#592673','C':'#22A954'} %}
+            {% for l in por_linea %}
+            <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);">
+              <div style="width:32px;height:32px;border-radius:8px;background:{{ linea_colors.get(l.linea,'#666') }};display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:14px;flex-shrink:0;">{{ l.linea }}</div>
+              <div style="flex:1;">
+                <div style="display:flex;justify-content:space-between;">
+                  <span style="font-weight:600;">Línea {{ l.linea }}</span>
+                  <span style="font-weight:700;font-size:15px;">{{ l.n }}</span>
+                </div>
+                <div class="progress-bar mt-1" style="height:5px;">
+                  <div class="progress-fill" style="width:{{ (l.n/total*100)|int }}%;background:{{ linea_colors.get(l.linea,'#666') }};"></div>
+                </div>
+                <div class="text-sm text-muted linea-anr-text" data-linea="{{ l.linea }}" style="margin-top:2px;">ANR: ${{ "%.1f"|format((l.total_anr or 0)/1e6) }}M</div>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">Sectores de actividad del adoptante</span></div>
+        <div class="card-body"><div class="chart-wrap-lg"><canvas id="chart-sectores"></canvas></div></div>
+      </div>
+    </div>
+
+    <div class="grid-2 mb-3">
+      <div class="card">
+        <div class="card-header"><span class="card-title">Sector temático del proyecto</span></div>
+        <div class="card-body"><div class="chart-wrap"><canvas id="chart-sector-tema"></canvas></div></div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">ANR por año</span>
+          <span id="anr-anio-sublabel" class="text-sm text-muted">Monto total comprometido · nominal</span>
+        </div>
+        <div class="card-body"><div class="chart-wrap"><canvas id="chart-anr-anio"></canvas></div></div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ── TAB: Territorio ────────────────────────────────────────── -->
+  <div class="tab-content" data-tab-content="territorio">
+    <div class="grid-2 mb-3">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Top 15 municipios</span>
+          <span id="mun-sublabel" class="text-sm text-muted">Por cantidad de proyectos</span>
+        </div>
+        <div class="card-body"><div class="chart-wrap-lg"><canvas id="chart-municipios"></canvas></div></div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Distribución por sección electoral</span>
+          <span class="text-sm text-muted">Secciones de la Provincia de Buenos Aires</span>
+        </div>
+        <div class="card-body">
+          <div class="chart-wrap-sm"><canvas id="chart-seccion"></canvas></div>
+          <div style="margin-top:14px;">
+            {% for s in por_seccion %}
+            <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);">
+              <span style="font-weight:700;font-family:'Sora',sans-serif;width:36px;color:var(--blue);">{{ s.seccion }}</span>
+              <div style="flex:1;">
+                <div class="progress-bar" style="height:5px;"><div class="progress-fill" style="width:{{ (s.n/total*100)|int }}%;"></div></div>
+              </div>
+              <span style="font-weight:700;min-width:28px;text-align:right;">{{ s.n }}</span>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── TAB: Actores ──────────────────────────────────────────── -->
+  <div class="tab-content" data-tab-content="actores">
+    <div class="grid-2 mb-3">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Top instituciones beneficiarias (IB)</span>
+          <span id="ib-sublabel" class="text-sm text-muted">Por cantidad de proyectos</span>
+        </div>
+        <div class="card-body"><div class="chart-wrap-lg"><canvas id="chart-ib"></canvas></div></div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Género en proyectos</span>
+        </div>
+        <div class="card-body">
+          <!-- Gender KPIs -->
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px;">
+            <div style="background:var(--purple-pale);border-radius:10px;padding:16px;text-align:center;">
+              <div style="font-family:'Sora',sans-serif;font-size:30px;font-weight:800;color:var(--purple);">{{ total_mujeres }}</div>
+              <div class="text-sm" style="color:var(--purple);font-weight:600;margin-top:4px;">Investigadoras mujeres</div>
+            </div>
+            <div style="background:var(--blue-pale);border-radius:10px;padding:16px;text-align:center;">
+              <div style="font-family:'Sora',sans-serif;font-size:30px;font-weight:800;color:var(--blue);">{{ directoras }}</div>
+              <div class="text-sm" style="color:var(--blue);font-weight:600;margin-top:4px;">Proyectos con directora mujer</div>
+            </div>
+          </div>
+          <div class="chart-wrap-sm"><canvas id="chart-genero"></canvas></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Top IB table -->
+    <div class="card">
+      <div class="card-header"><span class="card-title">Detalle de instituciones beneficiarias</span></div>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr><th>Institución</th><th>Proyectos</th><th>ANR total</th><th>% del total</th></tr>
+          </thead>
+          <tbody>
+            {% for ib in top_ib %}
+            <tr>
+              <td style="font-weight:600;font-size:13px;">{{ ib.beneficiario }}</td>
+              <td>{{ ib.n }}</td>
+              <td class="mono text-sm">${{ "%.1f"|format((ib.total_anr or 0)/1e6) }}M</td>
+              <td>
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <div class="progress-bar" style="width:80px;height:5px;"><div class="progress-fill" style="width:{{ (ib.n/total*100)|int }}%;"></div></div>
+                  <span class="text-sm text-muted">{{ "%.1f"|format(ib.n/total*100) }}%</span>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ── TAB: Mapa ─────────────────────────────────────────────── -->
+  <div class="tab-content" data-tab-content="mapa">
+
+    <!-- Controles -->
+    <div class="card mb-3 no-print">
+      <div class="card-body" style="padding:12px 20px;">
+        <div style="display:flex;align-items:center;gap:24px;flex-wrap:wrap;">
+          <div>
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:5px;">Métrica</div>
+            <div style="display:flex;gap:4px;">
+              <button class="btn btn-primary btn-sm"   id="mmap-n"    onclick="setMapaMetric('n')">Proyectos</button>
+              <button class="btn btn-secondary btn-sm" id="mmap-anr"  onclick="setMapaMetric('anr')">ANR nominal</button>
+              <button class="btn btn-secondary btn-sm" id="mmap-real" onclick="setMapaMetric('real')">ANR actualizado</button>
+            </div>
+          </div>
+          <div>
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:5px;">Convocatoria</div>
+            <div style="display:flex;gap:4px;">
+              <button class="btn btn-primary btn-sm"   id="mmap-y-all"  onclick="setMapaAnio('all')">Todas</button>
+              <button class="btn btn-secondary btn-sm" id="mmap-y-2022" onclick="setMapaAnio('2022')">2022</button>
+              <button class="btn btn-secondary btn-sm" id="mmap-y-2023" onclick="setMapaAnio('2023')">2023</button>
+              <button class="btn btn-secondary btn-sm" id="mmap-y-2024" onclick="setMapaAnio('2024')">2024</button>
+              <button class="btn btn-secondary btn-sm" id="mmap-y-2025" onclick="setMapaAnio('2025')">2025</button>
+            </div>
+          </div>
+          <div style="margin-left:auto;text-align:right;">
+            <div style="font-size:13px;font-weight:700;" id="mapa-stat-val">—</div>
+            <div class="text-sm text-muted" id="mapa-stat-lbl">municipios con datos</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mapa + ranking -->
+    <div style="display:grid;grid-template-columns:1fr 270px;gap:16px;align-items:start;">
+
+      <div class="card">
+        <div id="fitba-map" style="height:600px;border-radius:var(--radius) var(--radius) 0 0;background:var(--surface-2);"></div>
+        <div id="mapa-loading" style="display:none;padding:12px 16px;text-align:center;" class="text-sm text-muted">
+          <span class="material-icons-round" style="font-size:16px;vertical-align:middle;animation:spin 1s linear infinite;">sync</span>
+          Cargando límites municipales…
+        </div>
+        <!-- Leyenda -->
+        <div style="padding:10px 18px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <span class="text-sm text-muted" id="mapa-legend-label" style="white-space:nowrap;min-width:80px;">Proyectos</span>
+          <div style="display:flex;gap:3px;align-items:stretch;flex:1;">
+            <div style="flex:1;height:14px;border-radius:3px 0 0 3px;background:#EEF3F7;"></div>
+            <div style="flex:1;height:14px;background:#9BD6E9;"></div>
+            <div style="flex:1;height:14px;background:#00AEC3;"></div>
+            <div style="flex:1;height:14px;background:#0077A8;"></div>
+            <div style="flex:1;height:14px;border-radius:0 3px 3px 0;background:#1E325C;"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text-muted);gap:4px;">
+            <span>0</span>
+            <span id="mapa-legend-q1"></span>
+            <span id="mapa-legend-mid"></span>
+            <span id="mapa-legend-q3"></span>
+            <span id="mapa-legend-max"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Ranking lateral -->
+      <div class="card" style="position:sticky;top:70px;">
+        <div class="card-header" style="padding:10px 14px;">
+          <span class="card-title" style="font-size:13px;" id="mapa-rank-title">Ranking — Proyectos</span>
+        </div>
+        <div style="overflow-y:auto;max-height:580px;">
+          <table style="width:100%;border-collapse:collapse;">
+            <thead>
+              <tr style="background:var(--surface-2);">
+                <th style="padding:5px 8px;font-size:10px;text-align:center;border-bottom:1px solid var(--border);width:24px;">#</th>
+                <th style="padding:5px 10px;font-size:10px;border-bottom:1px solid var(--border);">Municipio</th>
+                <th style="padding:5px 8px;font-size:10px;text-align:right;border-bottom:1px solid var(--border);" id="mapa-rank-col">Proy.</th>
+              </tr>
+            </thead>
+            <tbody id="mapa-rank-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+
+  <!-- ── TAB: Proyectos ─────────────────────────────────────────── -->
+  <div class="tab-content" data-tab-content="proyectos">
+    <!-- Filtros inline -->
+    <div class="filter-bar mb-2">
+      <input type="text" id="proj-search" class="form-control" placeholder="Buscar por nombre, IB, adoptante…" style="max-width:280px;">
+      <select id="proj-linea" class="form-control" style="max-width:120px;">
+        <option value="">Todas las líneas</option>
+        <option value="A">Línea A</option>
+        <option value="B">Línea B</option>
+        <option value="C">Línea C</option>
+      </select>
+      <select id="proj-anio" class="form-control" style="max-width:120px;">
+        <option value="">Todos los años</option>
+        <option value="2022">2022</option>
+        <option value="2023">2023</option>
+        <option value="2024">2024</option>
+        <option value="2025">2025</option>
+      </select>
+      <select id="proj-estado" class="form-control" style="max-width:160px;">
+        <option value="">Todos los estados</option>
+        <option value="activo">En ejecución</option>
+        <option value="finalizado">Finalizado</option>
+        <option value="en_finalizacion">En finalización</option>
+        <option value="suspendido">Rescindido</option>
+      </select>
+    </div>
+
+    <div class="card">
+      <div class="table-wrapper">
+        <table id="fitba-table">
+          <thead>
+            <tr>
+              <th>Código</th>
+              <th>Proyecto</th>
+              <th>Línea</th>
+              <th>Año</th>
+              <th>Beneficiario (IB)</th>
+              <th>Adoptante</th>
+              <th>Municipio</th>
+              <th>ANR</th>
+              <th>Estado</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% set linea_colors = {'A':'#00AEC3','B':'#592673','C':'#22A954'} %}
+            {% for p in proyectos %}
+            <tr data-nombre="{{ p.nombre|lower }}" data-ib="{{ (p.beneficiario or '')|lower }}" data-adoptante="{{ (p.adoptante or '')|lower }}" data-linea="{{ p.linea or '' }}" data-anio="{{ p.anio or '' }}" data-estado="{{ p.estado or '' }}">
+              <td class="mono text-sm">{{ p.codigo or '—' }}</td>
+              <td style="max-width:200px;">
+                <a href="{{ url_for('proyectos.detail', pid=p.id) }}" style="color:var(--teal);text-decoration:none;font-weight:600;font-size:12.5px;">{{ p.nombre[:55] }}{% if p.nombre|length > 55 %}…{% endif %}</a>
+              </td>
+              <td>
+                {% if p.linea %}
+                <span style="background:{{ linea_colors.get(p.linea,'#666') }}22;color:{{ linea_colors.get(p.linea,'#666') }};padding:2px 8px;border-radius:4px;font-size:11px;font-weight:800;">{{ p.linea }}</span>
+                {% else %}—{% endif %}
+              </td>
+              <td class="text-sm">{{ p.anio or '—' }}</td>
+              <td class="text-sm" style="max-width:140px;">{{ p.beneficiario or '—' }}</td>
+              <td class="text-sm" style="max-width:130px;">{{ p.adoptante or '—' }}</td>
+              <td class="text-sm">{{ p.municipio or '—' }}</td>
+              <td class="mono text-sm">${{ "%.0f"|format((p.anr_monto or 0)/1000) }}K</td>
+              <td>
+                {% set e_label = {'activo':'Ejecución','finalizado':'Finalizado','en_finalizacion':'Finalizando','suspendido':'Rescindido'} %}
+                {% set e_class = {'activo':'activo','finalizado':'finalizado','en_finalizacion':'en_proceso','suspendido':'suspendido'} %}
+                <span class="badge badge-{{ e_class.get(p.estado,'pendiente') }}">{{ e_label.get(p.estado, p.estado or '—') }}</span>
+              </td>
+              <td><a href="{{ url_for('proyectos.detail', pid=p.id) }}" class="btn btn-secondary btn-sm btn-icon"><span class="material-icons-round">open_in_new</span></a></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div style="padding:10px 16px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
+        <span class="text-sm text-muted" id="proj-count">{{ total }} proyectos</span>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   FITBA DASHBOARD — JS unificado
+   Dos estados independientes: modoReal (IPC) y modoBudget (métrica)
+   Una sola función refreshCharts() consume ambos.
+═══════════════════════════════════════════════════════════════ */
+
+/* ── Datos del servidor ─────────────────────────────────────── */
+const DATA = {
+  anioLinea:   {{ por_anio_linea|tojson }},
+  estadosDist: {{ estados_dist|tojson }},
+  lineaNom:    {{ por_linea|tojson }},
+  lineaReal:   {{ por_linea_ipc|tojson }},
+  sectorAct:   {{ sectores_sorted|tojson }},
+  sectorTema:  {{ sector_tema|tojson }},
+  anioNom:     {{ por_anio|tojson }},
+  anioReal:    {{ por_anio_ipc|tojson }},
+  munNom:      {{ por_municipio|tojson }},
+  munReal:     {{ por_municipio_ipc|tojson }},
+  seccion:     {{ por_seccion|tojson }},
+  ibNom:       {{ top_ib|tojson }},
+  ibReal:      {{ top_ib_ipc|tojson }},
+  mapa: {
+    all:      {{ mapa_municipios|tojson }},
+    por_anio: {{ mapa_por_anio|tojson }},
+    ib:       {{ mapa_ib|tojson }}
+  }
+};
+
+const IPC_FECHA_VAL  = {{ ipc_fecha_val|tojson }};
+const TOTAL_ANR_NOM  = {{ total_anr }};
+const TOTAL_ANR_REAL = {{ total_anr_real }};
+const TOTAL_PROY     = {{ total }};
+
+/* ── Estado global: modo único de 3 opciones ─────────────────── */
+let fitbaMode = 'n'; // 'n' = proyectos | 'nom' = ANR nominal | 'real' = ANR real
+// Aliases para compatibilidad con refreshCharts
+let modoReal   = false;
+let modoBudget = false;
+
+/* ── Colores institucionales ───────────────────────────────── */
+const COL = {
+  navy:'#1E325C', teal:'#00AEC3', green:'#1A9E5C',
+  gold:'#E0A800', red:'#C0392B', purple:'#6C3483',
+  lineaA:'#00AEC3', lineaB:'#6C3483', lineaC:'#1A9E5C'
+};
+
+/* ── Helpers ────────────────────────────────────────────────── */
+function fmtM(v) {
+  if (v === undefined || v === null || isNaN(v) || v === 0) return '—';
+  if (v >= 1e9) return '$'+(v/1e9).toFixed(1)+'MM';
+  if (v >= 1e6) return '$'+(v/1e6).toFixed(0)+'M';
+  return '$'+Math.round(v).toLocaleString('es-AR');
+}
+function shortIB(s) {
+  return (s||'').replace(/Universidad Nacional de /g,'UN ')
+                .replace(/Universidad Nacional /g,'UN ')
+                .replace(/CCT CONICET /g,'CONICET ');
+}
+/* Pick the right value from a data object given current mode */
+function pick(obj, budgetKey_nom, budgetKey_real, countKey) {
+  if (!modoBudget) return obj[countKey] || obj.n || 0;
+  return modoReal ? (obj[budgetKey_real] || obj[budgetKey_nom] || 0)
+                  : (obj[budgetKey_nom]  || 0);
+}
+function metricLabel() {
+  if (!modoBudget) return 'Proyectos';
+  return modoReal ? ('ANR real pesos '+IPC_FECHA_VAL) : 'ANR nominal ($)';
+}
+
+/* ── Build charts (called once) ────────────────────────────── */
+let charts = {};
+
+function buildCharts() {
+  const linea_colors = [COL.lineaA, COL.lineaB, COL.lineaC];
+  const estado_colors = {
+    activo: COL.green, finalizado: COL.teal,
+    en_finalizacion: COL.gold, suspendido: COL.red
+  };
+  const estado_labels = {
+    activo:'En ejecución', finalizado:'Finalizado',
+    en_finalizacion:'En finalización', suspendido:'Rescindido'
+  };
+
+  /* Años × Línea — stacked bars (count only, no budget mode) */
+  const anios   = [...new Set(DATA.anioLinea.map(d=>d.anio))].sort();
+  const lineas  = ['A','B','C'];
+  charts.anioLinea = new Chart(document.getElementById('chart-anio-linea'), {
+    type:'bar',
+    data:{ labels:anios, datasets: lineas.map((l,i)=>({
+      label:'Línea '+l,
+      data: anios.map(a=>{const r=DATA.anioLinea.find(d=>d.anio==a&&d.linea==l);return r?r.n:0;}),
+      backgroundColor: linea_colors[i]+'CC', borderColor: linea_colors[i],
+      borderWidth:2, borderRadius:5, stack:'s'
+    }))},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{position:'top'}},
+      scales:{x:{stacked:true,grid:{display:false}},y:{stacked:true,beginAtZero:true,grid:{color:'#EEF1F5'}}}}
+  });
+
+  /* Estados donut */
+  charts.estados = new Chart(document.getElementById('chart-estados'), {
+    type:'doughnut',
+    data:{
+      labels: DATA.estadosDist.map(e=>estado_labels[e.estado]||e.estado),
+      datasets:[{data:DATA.estadosDist.map(e=>e.n),
+        backgroundColor:DATA.estadosDist.map(e=>estado_colors[e.estado]||'#aaa'),
+        borderWidth:3, borderColor:'#fff'}]
+    },
+    options:{responsive:true,maintainAspectRatio:false,cutout:'68%',plugins:{legend:{position:'right'}}}
+  });
+
+  /* Por línea donut */
+  charts.linea = new Chart(document.getElementById('chart-linea'), {
+    type:'doughnut',
+    data:{
+      labels:DATA.lineaNom.map(l=>'Línea '+l.linea),
+      datasets:[{data:DATA.lineaNom.map(l=>l.n),
+        backgroundColor:DATA.lineaNom.map(l=>COL['linea'+l.linea]||'#666'),
+        borderWidth:3, borderColor:'#fff'}]
+    },
+    options:{responsive:true,maintainAspectRatio:false,cutout:'60%',plugins:{legend:{position:'right'}}}
+  });
+
+  /* Sectores de actividad */
+  charts.sectores = new Chart(document.getElementById('chart-sectores'), {
+    type:'bar',
+    data:{
+      labels:DATA.sectorAct.map(s=>s.sector.length>30?s.sector.slice(0,30)+'…':s.sector),
+      datasets:[{data:DATA.sectorAct.map(s=>s.n),
+        backgroundColor:COL.teal+'BB', borderColor:COL.teal, borderWidth:2, borderRadius:5}]
+    },
+    options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',
+      plugins:{legend:{display:false}},
+      scales:{x:{beginAtZero:true,grid:{color:'#EEF1F5'}},y:{grid:{display:false},ticks:{font:{size:11}}}}}
+  });
+
+  /* Sector tema donut */
+  const temaColors=['#1E325C','#6C3483','#1A9E5C','#E65100','#1B5E20','#B71C1C','#F57F17','#0D47A1','#37474F','#880E4F'];
+  charts.sectorTema = new Chart(document.getElementById('chart-sector-tema'), {
+    type:'doughnut',
+    data:{labels:DATA.sectorTema.map(s=>s.sector_tema),
+      datasets:[{data:DATA.sectorTema.map(s=>s.n),
+        backgroundColor:temaColors, borderWidth:3, borderColor:'#fff'}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'55%',plugins:{legend:{position:'right'}}}
+  });
+
+  /* ANR / proyectos por año — this one reacts to BOTH switches */
+  charts.anrAnio = new Chart(document.getElementById('chart-anr-anio'), {
+    type:'bar',
+    data:{
+      labels:DATA.anioNom.map(d=>d.anio),
+      datasets:[{label:'ANR nominal ($M)', data:DATA.anioNom.map(d=>((d.total_anr||0)/1e6).toFixed(1)),
+        backgroundColor:COL.gold+'BB', borderColor:COL.gold, borderWidth:2, borderRadius:6}]
+    },
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>' $'+ctx.raw+'M'}}},
+      scales:{y:{beginAtZero:true,grid:{color:'#EEF1F5'},ticks:{callback:v=>'$'+v+'M'}},x:{grid:{display:false}}}}
+  });
+
+  /* Municipios — reacts to BOTH switches */
+  charts.mun = new Chart(document.getElementById('chart-municipios'), {
+    type:'bar',
+    data:{labels:DATA.munNom.map(m=>m.municipio),
+      datasets:[{label:'Proyectos', data:DATA.munNom.map(m=>m.n),
+        backgroundColor:COL.teal+'BB', borderColor:COL.teal, borderWidth:2, borderRadius:5}]},
+    options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',
+      plugins:{legend:{display:false}},
+      scales:{x:{beginAtZero:true,grid:{color:'#EEF1F5'}},y:{grid:{display:false}}}}
+  });
+
+  /* Sección electoral */
+  charts.seccion = new Chart(document.getElementById('chart-seccion'), {
+    type:'bar',
+    data:{labels:DATA.seccion.map(s=>'Sección '+s.seccion),
+      datasets:[{data:DATA.seccion.map(s=>s.n),
+        backgroundColor:COL.teal+'BB', borderColor:COL.teal, borderWidth:2, borderRadius:5}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false}},
+      scales:{y:{beginAtZero:true,grid:{color:'#EEF1F5'}},x:{grid:{display:false}}}}
+  });
+
+  /* IB chart — reacts to BOTH switches */
+  charts.ib = new Chart(document.getElementById('chart-ib'), {
+    type:'bar',
+    data:{labels:DATA.ibNom.map(i=>{const s=shortIB(i.beneficiario);return s.length>28?s.slice(0,28)+'…':s;}),
+      datasets:[{label:'Proyectos', data:DATA.ibNom.map(i=>i.n),
+        backgroundColor:COL.purple+'BB', borderColor:COL.purple, borderWidth:2, borderRadius:5}]},
+    options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',
+      plugins:{legend:{display:false}},
+      scales:{x:{beginAtZero:true,grid:{color:'#EEF1F5'}},y:{grid:{display:false},ticks:{font:{size:11}}}}}
+  });
+
+  /* Género */
+  const totalInvest = {{ total_invest }};
+  const totalMujeres= {{ total_mujeres }};
+  charts.genero = new Chart(document.getElementById('chart-genero'), {
+    type:'doughnut',
+    data:{labels:['Investigadoras mujeres','Investigadores varones'],
+      datasets:[{data:[totalMujeres,totalInvest-totalMujeres],
+        backgroundColor:[COL.purple,'#E0E0E0'], borderWidth:3, borderColor:'#fff'}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'65%',
+      plugins:{legend:{position:'right'},
+        tooltip:{callbacks:{label:ctx=>ctx.label+': '+ctx.raw+' ('+(ctx.raw/totalInvest*100).toFixed(1)+'%)'}}}}
+  });
+}
+
+/* ── THE single refresh function ───────────────────────────── */
+function refreshCharts() {
+  const lbl    = metricLabel();
+  const isSrc  = (nom, real) => modoReal ? real : nom;
+
+  /* IB */
+  const ibSrc  = isSrc(DATA.ibNom, DATA.ibReal);
+  const ibKey  = modoBudget ? (modoReal ? 'total_real' : 'total_anr') : 'n';
+  const ibSort = [...ibSrc].sort((a,b)=>(b[ibKey]||0)-(a[ibKey]||0)).slice(0,15);
+  charts.ib.data.labels = ibSort.map(i=>{const s=shortIB(i.beneficiario);return s.length>28?s.slice(0,28)+'…':s;});
+  charts.ib.data.datasets[0].data  = ibSort.map(i=>i[ibKey]||0);
+  charts.ib.data.datasets[0].label = lbl;
+  charts.ib.options.scales.x.ticks.callback = modoBudget ? v=>fmtM(v) : v=>v;
+  charts.ib.update();
+  const ibSub = document.getElementById('ib-sublabel');
+  if (ibSub) ibSub.textContent = modoBudget ? lbl : 'Por cantidad de proyectos';
+
+  /* Municipios */
+  const munSrc  = isSrc(DATA.munNom, DATA.munReal);
+  const munKey  = modoBudget ? (modoReal ? 'total_real' : 'total_anr') : 'n';
+  const munSort = [...munSrc].sort((a,b)=>(b[munKey]||0)-(a[munKey]||0)).slice(0,15);
+  charts.mun.data.labels = munSort.map(d=>d.municipio);
+  charts.mun.data.datasets = [{
+    label: lbl,
+    data:  munSort.map(d=>d[munKey]||0),
+    backgroundColor: COL.teal+'BB', borderColor: COL.teal, borderRadius:5, borderWidth:2
+  }];
+  charts.mun.options.scales.x.ticks = modoBudget ? {callback:v=>fmtM(v)} : {};
+  charts.mun.update();
+  const munSub = document.getElementById('mun-sublabel');
+  if (munSub) munSub.textContent = modoBudget ? lbl : 'Por cantidad de proyectos';
+
+  /* ANR por año */
+  const anioSrc = isSrc(DATA.anioNom, DATA.anioReal);
+  const anioKey = modoBudget ? (modoReal ? 'total_real' : 'total_anr') : 'n';
+  charts.anrAnio.data.labels = anioSrc.map(d=>d.anio);
+  if (modoBudget) {
+    charts.anrAnio.data.datasets[0].data  = anioSrc.map(d=>((d[anioKey]||0)/1e6).toFixed(1));
+    charts.anrAnio.data.datasets[0].label = lbl+' ($M)';
+    charts.anrAnio.data.datasets[0].backgroundColor = modoReal ? COL.green+'BB' : COL.gold+'BB';
+    charts.anrAnio.data.datasets[0].borderColor      = modoReal ? COL.green : COL.gold;
+    charts.anrAnio.options.scales.y.ticks = {callback:v=>'$'+v+'M'};
+    charts.anrAnio.options.plugins.tooltip.callbacks.label = ctx=>' $'+ctx.raw+'M';
+  } else {
+    charts.anrAnio.data.datasets[0].data  = anioSrc.map(d=>d.n||0);
+    charts.anrAnio.data.datasets[0].label = 'Proyectos';
+    charts.anrAnio.data.datasets[0].backgroundColor = COL.teal+'BB';
+    charts.anrAnio.data.datasets[0].borderColor      = COL.teal;
+    charts.anrAnio.options.scales.y.ticks = {};
+    charts.anrAnio.options.plugins.tooltip.callbacks.label = ctx=>' '+ctx.raw+' proy.';
+  }
+  charts.anrAnio.update();
+  const anioSub = document.getElementById('anr-anio-sublabel');
+  if (anioSub) anioSub.textContent = lbl;
+
+  /* Línea — sidebar text + donut */
+  const lKey   = modoBudget ? (modoReal ? 'total_real' : 'total_anr') : 'n';
+  const lSrc   = isSrc(DATA.lineaNom, DATA.lineaReal);
+  document.querySelectorAll('.linea-anr-text').forEach(el=>{
+    const row = lSrc.find(d=>d.linea===el.dataset.linea);
+    const val = row ? (row[lKey]||0) : 0;
+    el.textContent = modoBudget ? ('ANR: '+fmtM(val)) : (val+' proyectos');
+  });
+
+  /* Header total */
+  const nomEl  = document.getElementById('hdr-nom');
+  const realEl = document.getElementById('hdr-real');
+  const lblEl  = document.getElementById('hdr-anr-label');
+  const noteEl = document.getElementById('hdr-ipc-note');
+  if (modoBudget) {
+    if (nomEl)  { nomEl.textContent  = fmtM(TOTAL_ANR_NOM);  nomEl.style.display  = modoReal ? 'none' : ''; }
+    if (realEl) { realEl.textContent = fmtM(TOTAL_ANR_REAL); realEl.style.display = modoReal ? '' : 'none'; }
+    if (lblEl)  lblEl.textContent = modoReal ? ('ANR pesos '+IPC_FECHA_VAL) : 'ANR comprometido';
+    if (noteEl) noteEl.style.display = modoReal ? 'block' : 'none';
+  } else {
+    if (nomEl)  { nomEl.textContent = TOTAL_PROY; nomEl.style.display = ''; }
+    if (realEl) realEl.style.display = 'none';
+    if (lblEl)  lblEl.textContent = 'proyectos totales';
+    if (noteEl) noteEl.style.display = 'none';
+  }
+
+  /* Sync mapa heat map if already loaded */
+  if (mapaGeojson) { updateMapaChoropleth(); updateMapaRanking(); }
+}
+
+/* ── Toggle handlers (each just sets state + calls refreshCharts) */
+function fitbaSetMode(mode) {
+  fitbaMode  = mode;
+  modoReal   = (mode === 'real');    // compat with refreshCharts
+  modoBudget = (mode !== 'n');       // compat with refreshCharts
+  // Highlight active button
+  ['n','nom','real'].forEach(m => {
+    const btn = document.getElementById('fitba-btn-'+m);
+    if (btn) btn.className = 'metric-btn' + (m === mode ? ' metric-btn-active' : '');
+  });
+  refreshCharts();
+}
+// Keep old names callable (e.g. from map metric buttons)
+function switchIPC(isReal)     { fitbaSetMode(isReal ? 'real' : (modoBudget ? 'nom' : 'n')); }
+function switchMetric(isBudget){ fitbaSetMode(isBudget ? (modoReal ? 'real' : 'nom') : 'n'); }
+
+/* ═══════════════════════════════════════════════════════════════
+   MAPA DE CALOR — FITBA · Provincia de Buenos Aires
+═══════════════════════════════════════════════════════════════ */
+let fitbaMap    = null;
+let mapaGeojson = null;
+let mapaMetric  = 'n';
+let mapaAnio    = 'all';
+
+/* Lookup dinámico según selección actual */
+function getMapaDataset() {
+  if (mapaAnio === 'all') return DATA.mapa.all;
+  return DATA.mapa.por_anio[mapaAnio] || [];
+}
+
+const _mapaLookupCache = {};
+function getMapaLookup() {
+  const key = mapaAnio;
+  if (!_mapaLookupCache[key]) {
+    const lk = {};
+    getMapaDataset().forEach(m => { lk[m.municipio] = m; });
+    _mapaLookupCache[key] = lk;
+  }
+  return _mapaLookupCache[key];
+}
+
+function getMapaVal(mun) {
+  if (!mun) return 0;
+  if (mapaMetric === 'n')    return mun.n    || 0;
+  if (mapaMetric === 'anr')  return mun.total_nom  || 0;
+  if (mapaMetric === 'real') return mun.total_real || 0;
+  return 0;
+}
+
+/* Escala de color: 5 tramos con raíz cuadrada para comprimir outliers */
+function mapaColor(val, maxVal) {
+  if (!val || maxVal === 0) return '#EEF3F7';
+  const RAMP = ['#EEF3F7','#C5E5F2','#74C9E3','#00AEC3','#0077A8','#1E325C'];
+  const t = Math.sqrt(val / maxVal);          // 0…1, comprimido
+  const idx = Math.min(5, Math.floor(t * 5) + (t > 0 ? 1 : 0));
+  return RAMP[idx];
+}
+
+function setMapaMetric(m) {
+  mapaMetric = m;
+  ['n','anr','real'].forEach(k => {
+    const btn = document.getElementById('mmap-' + k);
+    if (btn) btn.className = 'btn btn-sm ' + (k === m ? 'btn-primary' : 'btn-secondary');
+  });
+  if (mapaGeojson) { updateMapaChoropleth(); updateMapaRanking(); }
+}
+
+function setMapaAnio(a) {
+  mapaAnio = a;
+  ['all','2022','2023','2024','2025'].forEach(k => {
+    const btn = document.getElementById('mmap-y-' + k);
+    if (btn) btn.className = 'btn btn-sm ' + (k === a ? 'btn-primary' : 'btn-secondary');
+  });
+  if (mapaGeojson) { updateMapaChoropleth(); updateMapaRanking(); }
+}
+
+function updateMapaChoropleth() {
+  if (!mapaGeojson) return;
+  const lk     = getMapaLookup();
+  const vals   = getMapaDataset().map(m => getMapaVal(m));
+  const maxVal = Math.max(...vals, 1);
+
+  mapaGeojson.eachLayer(layer => {
+    const name = layer.feature.properties.nombre;
+    const d    = lk[name];
+    const val  = d ? getMapaVal(d) : 0;
+    layer.setStyle({
+      fillColor:   mapaColor(val, maxVal),
+      fillOpacity: val > 0 ? 0.85 : 0.25,
+      color:       val > 0 ? '#1E325C' : '#C8D8E4',
+      weight:      val > 0 ? 1.2 : 0.4,
+    });
+    /* Actualizar popup */
+    layer.unbindPopup(); layer.unbindTooltip();
+    if (d) {
+      layer.bindPopup(mapaPopup(name, d), { maxWidth: 240 });
+    } else {
+      layer.bindTooltip(name, { direction: 'top', opacity: 0.65 });
+    }
+  });
+
+  updateMapaLegend(maxVal);
+  updateMapaStats();
+}
+
+function updateMapaLegend(maxVal) {
+  const labels = { n: 'Proyectos', anr: 'ANR nominal', real: 'ANR act.' };
+  const lbl = document.getElementById('mapa-legend-label');
+  if (lbl) lbl.textContent = labels[mapaMetric] || '';
+
+  const safeMax = (maxVal && !isNaN(maxVal) && isFinite(maxVal)) ? maxVal : 0;
+  const fmtN = v => (v && !isNaN(v)) ? v : 0;
+  const fmt  = mapaMetric === 'n' ? v => fmtN(v) : v => fmtM(v);
+  const setTxt = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = fmt(v); };
+  if (safeMax > 0) {
+    setTxt('mapa-legend-q1',  Math.round(safeMax * 0.04));
+    setTxt('mapa-legend-mid', Math.round(safeMax * 0.25));
+    setTxt('mapa-legend-q3',  Math.round(safeMax * 0.64));
+    setTxt('mapa-legend-max', fmt(safeMax));
+  } else {
+    ['mapa-legend-q1','mapa-legend-mid','mapa-legend-q3','mapa-legend-max'].forEach(id => {
+      const el = document.getElementById(id); if (el) el.textContent = '—';
+    });
+  }
+}
+
+function updateMapaStats() {
+  const ds = getMapaDataset();
+  const totalMun = ds.filter(m => getMapaVal(m) > 0).length;
+  const totalVal = ds.reduce((s, m) => s + getMapaVal(m), 0);
+  const statVal = document.getElementById('mapa-stat-val');
+  const statLbl = document.getElementById('mapa-stat-lbl');
+  if (statVal) statVal.textContent = mapaMetric === 'n' ? totalVal + ' proyectos' : fmtM(totalVal);
+  if (statLbl) statLbl.textContent = totalMun + ' municipios con datos';
+}
+
+function updateMapaRanking() {
+  const labels = { n: 'Proy.', anr: 'ANR nominal', real: 'ANR act.' };
+  const col = document.getElementById('mapa-rank-col');
+  const ttl = document.getElementById('mapa-rank-title');
+  if (col) col.textContent = labels[mapaMetric];
+  if (ttl) ttl.textContent = 'Ranking — ' + { n:'Proyectos', anr:'ANR nominal', real:'ANR actualizado' }[mapaMetric];
+
+  const sorted = [...getMapaDataset()].sort((a, b) => getMapaVal(b) - getMapaVal(a));
+  const tbody  = document.getElementById('mapa-rank-body');
+  if (!tbody) return;
+  tbody.innerHTML = sorted.map((m, i) => `
+    <tr style="border-bottom:1px solid var(--border);" class="mapa-rank-row" data-mun="${m.municipio}">
+      <td style="padding:4px 8px;font-size:10.5px;text-align:center;color:var(--text-muted);">${i+1}</td>
+      <td style="padding:4px 10px;font-size:12px;font-weight:600;">${m.municipio}</td>
+      <td style="padding:4px 8px;font-size:11.5px;text-align:right;">
+        ${mapaMetric === 'n' ? m.n : fmtM(getMapaVal(m))}
+      </td>
+    </tr>`).join('');
+
+  /* Hover en ranking → highlight en mapa */
+  tbody.querySelectorAll('.mapa-rank-row').forEach(row => {
+    row.addEventListener('mouseenter', () => highlightMun(row.dataset.mun, true));
+    row.addEventListener('mouseleave', () => highlightMun(row.dataset.mun, false));
+  });
+}
+
+function highlightMun(name, on) {
+  if (!mapaGeojson) return;
+  mapaGeojson.eachLayer(layer => {
+    if (layer.feature.properties.nombre === name) {
+      if (on) layer.setStyle({ weight: 2.5, color: '#F5A623', fillOpacity: 1 });
+      else    mapaGeojson.resetStyle(layer);
+    }
+  });
+}
+
+function mapaPopup(name, d) {
+  const anioRows = ['2022','2023','2024','2025'].map(a => {
+    const lk = (_mapaLookupCache[a] || {});
+    const entry = lk[name];
+    if (!entry) return '';
+    return `<tr><td style="color:#6B82A0;padding:1px 0 1px 8px;font-size:11px;">Conv. ${a}</td>
+                <td style="font-weight:600;text-align:right;font-size:11px;">${entry.n}</td></tr>`;
+  }).join('');
+
+  return `<div style="font-family:'Encode Sans',sans-serif;min-width:190px;padding:2px 4px;">
+    <div style="font-weight:800;font-size:14px;color:#1E325C;margin-bottom:7px;border-bottom:2px solid #1E325C22;padding-bottom:5px;">${name}</div>
+    <table style="width:100%;border-collapse:collapse;font-size:12px;">
+      <tr><td style="color:#6B82A0;padding:2px 0;">Proyectos</td>
+          <td style="font-weight:700;text-align:right;">${d.n}</td></tr>
+      <tr><td style="color:#6B82A0;padding:2px 0;">ANR nominal</td>
+          <td style="font-weight:700;text-align:right;color:#00AEC3;">${fmtM(d.total_nom)}</td></tr>
+      <tr><td style="color:#6B82A0;padding:2px 0;">ANR actualizado</td>
+          <td style="font-weight:700;text-align:right;color:#1A9E5C;">${fmtM(d.total_real)}</td></tr>
+      ${mapaAnio === 'all' && anioRows ? `
+      <tr><td colspan="2" style="padding-top:6px;padding-bottom:2px;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#aaa;">Por convocatoria</td></tr>
+      ${anioRows}` : ''}
+    </table>
+  </div>`;
+}
+
+/* Inicializar mapa al hacer click en el tab */
+function onMapTabClick() {
+  /* Pre-cargar lookups por año para los popups */
+  ['2022','2023','2024','2025'].forEach(a => {
+    if (!_mapaLookupCache[a]) {
+      const lk = {};
+      (DATA.mapa.por_anio[a] || []).forEach(m => { lk[m.municipio] = m; });
+      _mapaLookupCache[a] = lk;
+    }
+  });
+
+  setTimeout(() => {
+    if (!fitbaMap) {
+      const SW = L.latLng(-42.5, -64.5), NE = L.latLng(-33.0, -56.0);
+      const bounds = L.latLngBounds(SW, NE);
+
+      fitbaMap = L.map('fitba-map', {
+        center: [-37.5, -60.5], zoom: 6,
+        maxBounds: bounds, maxBoundsViscosity: 1.0,
+        minZoom: 6, maxZoom: 12,
+        zoomControl: true,
+      });
+
+      /* Base: CartoDB Positron sin labels */
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
+        attribution: '© OpenStreetMap, © CARTO',
+        subdomains: 'abcd', maxZoom: 18,
+      }).addTo(fitbaMap);
+
+      const loadEl = document.getElementById('mapa-loading');
+      if (loadEl) loadEl.style.display = '';
+
+      fetch('/static/gba_municipios.geojson')
+        .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then(geojson => {
+          if (loadEl) loadEl.style.display = 'none';
+
+          const lk     = getMapaLookup();
+          const vals   = getMapaDataset().map(m => getMapaVal(m));
+          const maxVal = Math.max(...vals, 1);
+
+          mapaGeojson = L.geoJSON(geojson, {
+            style: feature => {
+              const d   = lk[feature.properties.nombre];
+              const val = d ? getMapaVal(d) : 0;
+              return {
+                fillColor:   mapaColor(val, maxVal),
+                fillOpacity: val > 0 ? 0.85 : 0.25,
+                color:       val > 0 ? '#1E325C' : '#C8D8E4',
+                weight:      val > 0 ? 1.2 : 0.4,
+              };
+            },
+            onEachFeature: (feature, layer) => {
+              const name = feature.properties.nombre;
+              const d    = lk[name];
+              layer.on('mouseover', e => {
+                e.target.setStyle({ weight: 2.5, color: '#00AEC3', fillOpacity: 1 });
+                e.target.bringToFront();
+              });
+              layer.on('mouseout', () => mapaGeojson.resetStyle(layer));
+              if (d) {
+                layer.bindPopup(mapaPopup(name, d), { maxWidth: 240 });
+              } else {
+                layer.bindTooltip(name, { direction: 'top', opacity: 0.65 });
+              }
+            }
+          }).addTo(fitbaMap);
+
+          fitbaMap.fitBounds(mapaGeojson.getBounds(), { padding: [10, 10] });
+
+          /* Labels encima */
+          L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png', {
+            subdomains: 'abcd', maxZoom: 18, opacity: 0.7,
+          }).addTo(fitbaMap);
+
+          updateMapaLegend(maxVal);
+          updateMapaStats();
+          updateMapaRanking();
+        })
+        .catch(err => {
+          if (loadEl) loadEl.innerHTML =
+            `<span style="color:var(--red);">Error: ${err.message}</span>`;
+        });
+    }
+    fitbaMap.invalidateSize();
+  }, 200);
+}
+
+
+/* ── Project table filter ───────────────────────────────────── */
+// ── Live filter for project table ───────────────────
+function filterTable() {
+  const q = document.getElementById('proj-search').value.toLowerCase();
+  const linea = document.getElementById('proj-linea').value;
+  const anio = document.getElementById('proj-anio').value;
+  const estado = document.getElementById('proj-estado').value;
+  let visible = 0;
+  document.querySelectorAll('#fitba-table tbody tr').forEach(row => {
+    const matchQ = !q || row.dataset.nombre.includes(q) || row.dataset.ib.includes(q) || row.dataset.adoptante.includes(q);
+    const matchL = !linea || row.dataset.linea === linea;
+    const matchA = !anio || row.dataset.anio === anio;
+    const matchE = !estado || row.dataset.estado === estado;
+    const show = matchQ && matchL && matchA && matchE;
+    row.style.display = show ? '' : 'none';
+    if (show) visible++;
+  });
+  document.getElementById('proj-count').textContent = visible + ' proyectos';
+}
+document.getElementById('proj-search').addEventListener('input', filterTable);
+document.getElementById('proj-linea').addEventListener('change', filterTable);
+document.getElementById('proj-anio').addEventListener('change', filterTable);
+document.getElementById('proj-estado').addEventListener('change', filterTable);
+
+
+/* ── Init on page load ─────────────────────────────────────── */
+document.addEventListener('DOMContentLoaded', buildCharts);
+</script>
+{% endblock %}

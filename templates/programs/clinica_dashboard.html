@@ -1,0 +1,1039 @@
+{% extends "base.html" %}
+{% block extra_head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+{% endblock %}
+{% block title %}Clínica Tecnológica — Dashboard{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('programas.list') }}" style="color:var(--text-muted);text-decoration:none;">Programas</a>
+  / Clínica Tecnológica
+{% endblock %}
+
+{% block topbar_actions %}
+  <!-- Selector 3 opciones -->
+  <div style="display:flex;align-items:center;gap:2px;background:var(--surface-2);border:1.5px solid var(--border);border-radius:8px;padding:3px;" title="base: junio del año de aprobación · val: {{ ipc_fecha_val }}">
+    <button id="clin-btn-n"    class="metric-btn metric-btn-active" onclick="clinSetMode('n')">Empresas</button>
+    <button id="clin-btn-nom"  class="metric-btn"                   onclick="clinSetMode('nom')">Monto nominal</button>
+    <button id="clin-btn-real" class="metric-btn"                   onclick="clinSetMode('real')">Monto real <span style="font-size:9px;opacity:.7;">{{ ipc_fecha_val }}</span></button>
+  </div>
+  {% if can_edit() %}
+  <a href="{{ url_for('proyectos.nuevo') }}?programa={{ programa.id }}" class="btn btn-primary btn-sm">
+    <span class="material-icons-round">add</span> Nueva empresa
+  </a>
+  {% endif %}
+  <a href="{{ url_for('reportes.exportar') }}?programa_id={{ programa.id }}" class="btn btn-secondary btn-sm">
+    <span class="material-icons-round">download</span> Exportar Excel
+  </a>
+  <a href="{{ url_for('reportes.ipc') }}" class="btn btn-secondary btn-sm" title="Herramienta IPC">
+    <span class="material-icons-round">calculate</span>
+  </a>
+{% endblock %}
+
+{% block content %}
+
+<!-- ─── Header ──────────────────────────────────────────────────────── -->
+<div style="background:linear-gradient(135deg,#1E325C 0%,#22A954 70%,#74C9E3 100%);border-radius:14px;padding:26px 32px;margin-bottom:24px;color:#fff;position:relative;overflow:hidden;">
+  <div style="position:absolute;right:-40px;top:-40px;width:200px;height:200px;border-radius:50%;background:rgba(255,255,255,.05);"></div>
+  <div style="position:absolute;right:60px;bottom:-60px;width:140px;height:140px;border-radius:50%;background:rgba(255,255,255,.04);"></div>
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:20px;flex-wrap:wrap;position:relative;z-index:1;">
+    <div>
+      <div style="font-size:11px;opacity:.6;margin-bottom:6px;letter-spacing:.1em;text-transform:uppercase;font-family:'Encode Sans',sans-serif;">Programa</div>
+      <h1 style="font-family:'Encode Sans',sans-serif;font-size:28px;font-weight:800;letter-spacing:-.01em;margin-bottom:4px;">Clínica Tecnológica</h1>
+      <p style="opacity:.75;font-size:14px;">Diagnóstico y asistencia técnica a empresas bonaerenses</p>
+      <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">
+        <span style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);color:#fff;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;">2020 → 2026</span>
+        <span style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);color:#fff;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;">{{ total }} empresas</span>
+      </div>
+    </div>
+    <div style="display:flex;gap:24px;text-align:center;flex-wrap:wrap;">
+      <div>
+        <div style="font-family:'Encode Sans',sans-serif;font-size:38px;font-weight:800;line-height:1;">{{ finalizados }}</div>
+        <div style="font-size:12px;opacity:.65;margin-top:2px;">diagnósticos finalizados</div>
+      </div>
+      <div style="border-left:1px solid rgba(255,255,255,.2);padding-left:24px;">
+        <div id="clin-hdr-val" style="font-family:'Encode Sans',sans-serif;font-size:38px;font-weight:800;line-height:1;">${{ "%.1f"|format(total_facturado/1e6) }}M</div>
+        <div id="clin-hdr-label" style="font-size:12px;opacity:.65;margin-top:2px;">facturado diagnósticos</div>
+        {% if convenios %}
+        <div id="clin-hdr-conv" style="font-size:11px;opacity:.6;margin-top:3px;">
+          + ${{ "%.1f"|format(total_convenios/1e6) }}M CFI convenios
+        </div>
+        {% endif %}
+      </div>
+      <div style="border-left:1px solid rgba(255,255,255,.2);padding-left:24px;">
+        <div id="clin-hdr-avg" style="font-family:'Encode Sans',sans-serif;font-size:38px;font-weight:800;line-height:1;">${{ "%.0f"|format(monto_promedio/1000) }}K</div>
+        <div id="clin-hdr-avg-label" style="font-size:12px;opacity:.65;margin-top:2px;">monto promedio</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── KPI cards ────────────────────────────────────────────────────── -->
+<div class="stat-grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr));margin-bottom:24px;">
+  <div class="stat-card">
+    <div class="stat-icon green"><span class="material-icons-round">check_circle</span></div>
+    <div><div class="stat-value">{{ finalizados }}</div><div class="stat-label">Diagnósticos finalizados</div></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon blue"><span class="material-icons-round">pending</span></div>
+    <div><div class="stat-value">{{ activos }}</div><div class="stat-label">En proceso activo</div></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon gold"><span class="material-icons-round">pause_circle</span></div>
+    <div><div class="stat-value">{{ en_fin }}</div><div class="stat-label">En stand-by</div></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon red"><span class="material-icons-round">cancel</span></div>
+    <div><div class="stat-value">{{ suspendidos }}</div><div class="stat-label">No válidas / bajas</div></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon purple"><span class="material-icons-round">percent</span></div>
+    <div>
+      <div class="stat-value">{{ "%.0f"|format(finalizados/total*100) }}%</div>
+      <div class="stat-label">Tasa finalización</div>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon orange"><span class="material-icons-round">factory</span></div>
+    <div>
+      <div class="stat-value">{{ por_especialista|length }}</div>
+      <div class="stat-label">Especialistas activos</div>
+    </div>
+  </div>
+  {% if convenios %}
+  <div class="stat-card" style="border-left:3px solid var(--teal);">
+    <div class="stat-icon teal"><span class="material-icons-round">handshake</span></div>
+    <div>
+      <div id="clin-conv-val" class="stat-value" style="font-size:18px;">${{ "%.1f"|format(total_convenios/1e6) }}M</div>
+      <div class="stat-label">Convenios CFI</div>
+      <div class="stat-sub">{{ convenios|length }} convenio{% if convenios|length != 1 %}s{% endif %}</div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<!-- ─── Tabs ─────────────────────────────────────────────────────────── -->
+<div class="tabs-container">
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="pipeline">Pipeline</button>
+    <button class="tab-btn" data-tab="territorio">Territorio</button>
+    <button class="tab-btn" data-tab="mapa" id="clin-tab-mapa-btn" onclick="onClinicaMapTabClick()">
+      <span class="material-icons-round" style="font-size:14px;vertical-align:middle;">map</span> Mapa
+    </button>
+    <button class="tab-btn" data-tab="rubros">Sectores & Rubros</button>
+    <button class="tab-btn" data-tab="especialistas">Especialistas</button>
+    <button class="tab-btn" data-tab="anios">Evolución anual</button>
+    <button class="tab-btn" data-tab="empresas">Empresas ({{ total }})</button>
+  </div>
+
+  <!-- ── TAB: Pipeline ──────────────────────────────────────────── -->
+  <div class="tab-content active" data-tab-content="pipeline">
+    <div class="grid-2 mb-3">
+      <!-- Funnel activo (etapas positivas) -->
+      <div class="card">
+        <div class="card-header" style="align-items:flex-start;flex-wrap:wrap;gap:8px;">
+          <div>
+            <span class="card-title" id="clin-pipe-title">Pipeline activo — Etapas del diagnóstico</span>
+            <div class="text-sm text-muted" id="clin-pipe-subtitle" style="margin-top:2px;">De captación a diagnóstico finalizado</div>
+          </div>
+          <button id="clin-pipe-toggle" class="btn btn-secondary btn-sm" onclick="clinPipelineToggle()" style="margin-left:auto;white-space:nowrap;">
+            Sin finalizados
+          </button>
+        </div>
+        <div class="card-body">
+          <div id="clin-pipeline-bars"></div>
+        </div>
+      </div>
+
+      <!-- Visualización funnel + bajas -->
+      <div class="card">
+        <div class="card-header"><span class="card-title">Distribución completa por situación</span></div>
+        <div class="card-body">
+          <div class="chart-wrap-lg"><canvas id="chart-pipeline"></canvas></div>
+          <!-- Bajas / no activos -->
+          <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border);">
+            <p class="text-sm text-muted" style="margin-bottom:10px;font-weight:600;">Bajas / no activos</p>
+            {% for etapa in pipeline[6:] %}
+            <div style="display:flex;align-items:center;gap:10px;padding:5px 0;">
+              <div style="width:8px;height:8px;border-radius:50%;background:var(--red);flex-shrink:0;"></div>
+              <span class="text-sm" style="flex:1;">{{ etapa.label }}</span>
+              <span style="font-weight:700;">{{ etapa.n }}</span>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Etapas del pipeline -->
+    <div class="card mb-3">
+      <div class="card-header">
+        <span class="card-title" id="clin-conv-title">Etapas del pipeline</span>
+        <span class="text-sm text-muted" id="clin-conv-subtitle">Todas las etapas</span>
+      </div>
+      <div class="card-body">
+        <div id="clin-pipeline-conv" style="display:flex;align-items:center;gap:0;overflow-x:auto;padding:8px 0;"></div>
+      </div>
+    </div>
+
+    <!-- Lista de diagnósticos finalizados -->
+    {% set finalizados_list = proyectos|selectattr('situacion_clinica','equalto','5.Diagnóstico Finalizado')|list %}
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Diagnósticos finalizados</span>
+        <span class="text-sm text-muted">{{ finalizados_list|length }} empresa{% if finalizados_list|length != 1 %}s{% endif %}</span>
+      </div>
+      <div class="table-wrapper" style="max-height:420px;overflow-y:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Empresa</th>
+              <th>Municipio</th>
+              <th>Especialista</th>
+              <th>Año</th>
+              <th>Monto diagnóstico</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in finalizados_list|sort(attribute='nombre') %}
+            <tr>
+              <td style="font-weight:600;font-size:13px;">
+                <a href="{{ url_for('proyectos.detail', pid=p.id) }}" style="color:var(--teal);text-decoration:none;">
+                  {{ p.nombre[:55] }}{% if p.nombre|length > 55 %}…{% endif %}
+                </a>
+              </td>
+              <td class="text-sm">{{ p.municipio or '—' }}</td>
+              <td class="text-sm">{% if p.especialista and p.especialista != '-' %}{{ p.especialista }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+              <td class="text-sm">{{ p.anio_aprobacion or '—' }}</td>
+              <td class="mono text-sm">{% if p.monto_diagnostico %}${{ "%.0f"|format(p.monto_diagnostico/1000) }}K{% else %}<span class="text-muted">—</span>{% endif %}</td>
+              <td><a href="{{ url_for('proyectos.detail', pid=p.id) }}" class="btn btn-secondary btn-sm btn-icon"><span class="material-icons-round">open_in_new</span></a></td>
+            </tr>
+            {% else %}
+            <tr><td colspan="6" class="text-muted text-sm" style="text-align:center;padding:20px;">Sin diagnósticos finalizados</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── TAB: Territorio ─────────────────────────────────────────── -->
+  <div class="tab-content" data-tab-content="territorio">
+    <div class="grid-2 mb-3">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Top 20 municipios</span>
+          <span class="text-sm text-muted">Por cantidad de empresas</span>
+        </div>
+        <div class="card-body"><div class="chart-wrap-lg" style="height:380px;"><canvas id="chart-municipios"></canvas></div></div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Municipios — detalle</span>
+        </div>
+        <div class="table-wrapper" style="max-height:420px;overflow-y:auto;">
+          <table>
+            <thead><tr><th>Municipio</th><th>Total</th><th>Finalizados</th><th>Tasa</th></tr></thead>
+            <tbody>
+              {% for m in por_municipio %}
+              <tr>
+                <td style="font-weight:600;font-size:13px;">{{ m.municipio }}</td>
+                <td>{{ m.n }}</td>
+                <td><span class="badge badge-finalizado">{{ m.finalizados }}</span></td>
+                <td>
+                  <div style="display:flex;align-items:center;gap:6px;">
+                    <div class="progress-bar" style="width:60px;height:5px;">
+                      <div class="progress-fill" style="width:{{ (m.finalizados/m.n*100)|int if m.n > 0 else 0 }}%;background:var(--green);"></div>
+                    </div>
+                    <span class="text-sm text-muted">{{ "%.0f"|format(m.finalizados/m.n*100) if m.n > 0 else 0 }}%</span>
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── TAB: Mapa ─────────────────────────────────────────────── -->
+  <div class="tab-content" data-tab-content="mapa">
+
+    <!-- Mapa + ranking -->
+    <div style="display:grid;grid-template-columns:1fr 270px;gap:16px;align-items:start;">
+
+      <div class="card">
+        <div id="clinica-map" style="height:600px;border-radius:var(--radius) var(--radius) 0 0;background:var(--surface-2);"></div>
+        <div id="clin-mapa-loading" style="display:none;padding:12px 16px;text-align:center;" class="text-sm text-muted">
+          <span class="material-icons-round" style="font-size:16px;vertical-align:middle;animation:spin 1s linear infinite;">sync</span>
+          Cargando límites municipales…
+        </div>
+        <!-- Leyenda -->
+        <div style="padding:10px 18px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <span class="text-sm text-muted" style="white-space:nowrap;min-width:100px;">Diagnósticos</span>
+          <div style="display:flex;gap:3px;align-items:stretch;flex:1;">
+            <div style="flex:1;height:14px;border-radius:3px 0 0 3px;background:#EEF3F7;"></div>
+            <div style="flex:1;height:14px;background:#9BD6C0;"></div>
+            <div style="flex:1;height:14px;background:#22A954;"></div>
+            <div style="flex:1;height:14px;background:#1A8044;"></div>
+            <div style="flex:1;height:14px;border-radius:0 3px 3px 0;background:#1E325C;"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text-muted);gap:4px;">
+            <span>0</span>
+            <span id="clin-mapa-legend-q1"></span>
+            <span id="clin-mapa-legend-mid"></span>
+            <span id="clin-mapa-legend-q3"></span>
+            <span id="clin-mapa-legend-max"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Ranking lateral -->
+      <div class="card" style="position:sticky;top:70px;">
+        <div class="card-header" style="padding:10px 14px;">
+          <span class="card-title" style="font-size:13px;">Ranking — Diagnósticos finalizados</span>
+        </div>
+        <div style="overflow-y:auto;max-height:580px;">
+          <table style="width:100%;border-collapse:collapse;">
+            <thead>
+              <tr style="background:var(--surface-2);">
+                <th style="padding:5px 8px;font-size:10px;text-align:center;border-bottom:1px solid var(--border);width:24px;">#</th>
+                <th style="padding:5px 10px;font-size:10px;border-bottom:1px solid var(--border);">Municipio</th>
+                <th style="padding:5px 8px;font-size:10px;text-align:right;border-bottom:1px solid var(--border);">Diag.</th>
+              </tr>
+            </thead>
+            <tbody id="clin-mapa-rank-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── TAB: Sectores & Rubros ─────────────────────────────────── -->
+  <div class="tab-content" data-tab-content="rubros">
+    <div class="grid-2 mb-3">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Distribución por rubro industrial</span>
+          <span class="text-sm text-muted">Top rubros de empresas asistidas</span>
+        </div>
+        <div class="card-body"><div class="chart-wrap-lg" style="height:360px;"><canvas id="chart-rubros"></canvas></div></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">Rubros — tabla completa</span></div>
+        <div class="table-wrapper" style="max-height:400px;overflow-y:auto;">
+          <table>
+            <thead><tr><th>Rubro</th><th>Empresas</th><th>% del total</th></tr></thead>
+            <tbody>
+              {% for r in rubros_raw %}
+              <tr>
+                <td style="font-weight:600;font-size:13px;">{{ r.rubro }}</td>
+                <td>{{ r.n }}</td>
+                <td>
+                  <div style="display:flex;align-items:center;gap:6px;">
+                    <div class="progress-bar" style="width:80px;height:5px;">
+                      <div class="progress-fill" style="width:{{ (r.n/total*100)|int }}%;"></div>
+                    </div>
+                    <span class="text-sm text-muted">{{ "%.1f"|format(r.n/total*100) }}%</span>
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── TAB: Especialistas ──────────────────────────────────────── -->
+  <div class="tab-content" data-tab-content="especialistas">
+    <div class="card mb-3">
+      <div class="card-header">
+        <span class="card-title">Desempeño por especialista</span>
+        <span id="clin-esp-sublabel" class="text-sm text-muted">Diagnósticos asignados, finalizados y monto promedio</span>
+      </div>
+      <div class="card-body"><div class="chart-wrap-lg"><canvas id="chart-especialistas"></canvas></div></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span class="card-title">Detalle por especialista</span></div>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Especialista</th>
+              <th>Total asignados</th>
+              <th>Finalizados</th>
+              <th>Bajas / no válidas</th>
+              <th>Tasa finalización</th>
+              <th id="clin-esp-monto-hdr">Monto promedio</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for e in por_especialista %}
+            <tr>
+              <td style="font-weight:700;font-size:13.5px;">{{ e.especialista }}</td>
+              <td><strong>{{ e.n }}</strong></td>
+              <td><span class="badge badge-finalizado">{{ e.finalizados }}</span></td>
+              <td><span class="badge badge-suspendido">{{ e.bajas }}</span></td>
+              <td>
+                <div style="display:flex;align-items:center;gap:7px;">
+                  <div class="progress-bar" style="width:70px;height:6px;">
+                    <div class="progress-fill" style="width:{{ (e.finalizados/e.n*100)|int if e.n > 0 else 0 }}%;background:var(--green);"></div>
+                  </div>
+                  <span class="text-sm">{{ "%.0f"|format(e.finalizados/e.n*100) if e.n > 0 else 0 }}%</span>
+                </div>
+              </td>
+              <td class="mono text-sm clin-esp-monto"
+                  data-nom="{{ e.monto_avg|int }}"
+                  data-real="{{ e.monto_avg_real|int }}">
+                {% if e.monto_avg > 0 %}${{ "%.0f"|format(e.monto_avg/1000) }}K{% else %}<span class="text-muted">—</span>{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── TAB: Evolución anual ─────────────────────────────────────── -->
+  <div class="tab-content" data-tab-content="anios">
+    <div class="grid-2 mb-3">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Empresas aprobadas por año</span>
+          <span class="text-sm text-muted">Activas, finalizadas y bajas</span>
+        </div>
+        <div class="card-body"><div class="chart-wrap-lg"><canvas id="chart-anios"></canvas></div></div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Estado empresa por cohorte</span>
+        </div>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Año</th><th>Total</th><th>Finalizados</th><th>Activos</th><th>Bajas</th><th>Tasa</th></tr></thead>
+            <tbody>
+              {% for a in por_anio %}
+              <tr>
+                <td style="font-weight:700;font-family:'Encode Sans',sans-serif;color:var(--teal);">{{ a.anio }}</td>
+                <td><strong>{{ a.n }}</strong></td>
+                <td><span class="badge badge-finalizado">{{ a.finalizados }}</span></td>
+                <td><span class="badge badge-activo">{{ a.activos }}</span></td>
+                <td><span class="badge badge-suspendido">{{ a.suspendidos }}</span></td>
+                <td class="text-sm">{{ "%.0f"|format(a.finalizados/a.n*100) if a.n > 0 else 0 }}%</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Períodos de facturación -->
+    {% if por_periodo %}
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Períodos de facturación más recientes</span>
+        <span class="text-sm text-muted">Cantidad de diagnósticos facturados por período</span>
+      </div>
+      <div class="card-body"><div class="chart-wrap"><canvas id="chart-periodos"></canvas></div></div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- ── TAB: Empresas ──────────────────────────────────────────── -->
+  <div class="tab-content" data-tab-content="empresas">
+    <!-- Filtros -->
+    <div class="filter-bar mb-2">
+      <input type="text" id="clic-search" class="form-control" placeholder="Buscar empresa, CUIT…" style="max-width:260px;">
+      <select id="clic-situacion" class="form-control" style="max-width:200px;">
+        <option value="">Todas las situaciones</option>
+        <option value="5.Diagnóstico Finalizado">Diagnóstico finalizado</option>
+        <option value="4.Diagnóstico En Proceso">En proceso</option>
+        <option value="3.Visita programada">Visita programada</option>
+        <option value="1.Derivado a Clínico">Derivado a Clínico</option>
+        <option value="Averiguando interés">Averiguando interés</option>
+        <option value="2.Empresa en stand-by">Stand-by</option>
+        <option value="2.Empresa no interesada">No interesada</option>
+        <option value="0.Empresa no válida">No válida</option>
+        <option value="0.Municipio no priorizado">Municipio no priorizado</option>
+      </select>
+      <select id="clic-anio" class="form-control" style="max-width:130px;">
+        <option value="">Todos los años</option>
+        {% for a in por_anio %}<option value="{{ a.anio }}">{{ a.anio }}</option>{% endfor %}
+      </select>
+      <select id="clic-especialista" class="form-control" style="max-width:160px;">
+        <option value="">Todos los especialistas</option>
+        {% for e in por_especialista %}<option value="{{ e.especialista }}">{{ e.especialista }}</option>{% endfor %}
+      </select>
+    </div>
+
+    <div class="card">
+      <div class="table-wrapper">
+        <table id="clic-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Empresa</th>
+              <th>CUIT</th>
+              <th>Municipio</th>
+              <th>Rubro</th>
+              <th>Especialista</th>
+              <th>Año</th>
+              <th>Situación</th>
+              <th>Monto diagnóstico</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% set sit_badge = {
+              '5.Diagnóstico Finalizado': 'finalizado',
+              '4.Diagnóstico En Proceso': 'activo',
+              '3.Visita programada': 'en_proceso',
+              '1.Derivado a Clínico': 'en_proceso',
+              'Averiguando interés': 'pendiente',
+              '2.Empresa en stand-by': 'en_finalizacion',
+              '2.Empresa no interesada': 'suspendido',
+              '0.Empresa no válida': 'suspendido',
+              '0.Municipio no priorizado': 'suspendido',
+            } %}
+            {% set sit_short = {
+              '5.Diagnóstico Finalizado': 'Finalizado',
+              '4.Diagnóstico En Proceso': 'En proceso',
+              '3.Visita programada': 'Visita prog.',
+              '1.Derivado a Clínico': 'Derivado',
+              'Averiguando interés': 'Averiguando',
+              '2.Empresa en stand-by': 'Stand-by',
+              '2.Empresa no interesada': 'No interesada',
+              '0.Empresa no válida': 'No válida',
+              '0.Municipio no priorizado': 'Mun. no prio.',
+            } %}
+            {% for p in proyectos %}
+            <tr
+              data-nombre="{{ p.nombre|lower }}"
+              data-cuit="{{ (p.cuit or '')|lower }}"
+              data-situacion="{{ p.situacion_clinica or '' }}"
+              data-anio="{{ p.anio_aprobacion or '' }}"
+              data-especialista="{{ p.especialista or '' }}">
+              <td class="mono text-sm" style="color:var(--text-muted);">{{ p.codigo.replace('CLINICA-','') }}</td>
+              <td style="max-width:200px;">
+                <a href="{{ url_for('proyectos.detail', pid=p.id) }}" style="color:var(--teal);text-decoration:none;font-weight:600;font-size:12.5px;">{{ p.nombre[:55] }}{% if p.nombre|length > 55 %}…{% endif %}</a>
+              </td>
+              <td class="mono text-sm">{{ p.cuit or '—' }}</td>
+              <td class="text-sm">{{ p.municipio or '—' }}</td>
+              <td class="text-sm" style="max-width:110px;">{{ p.rubro or '—' }}</td>
+              <td class="text-sm">{% if p.especialista and p.especialista != '-' %}{{ p.especialista }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+              <td class="text-sm">{{ p.anio_aprobacion or '—' }}</td>
+              <td>
+                <span class="badge badge-{{ sit_badge.get(p.situacion_clinica,'pendiente') }}" style="font-size:10.5px;">
+                  {{ sit_short.get(p.situacion_clinica, p.situacion_clinica or '—') }}
+                </span>
+              </td>
+              <td class="mono text-sm">{% if p.monto_diagnostico %}${{ "%.0f"|format(p.monto_diagnostico/1000) }}K{% else %}<span class="text-muted">—</span>{% endif %}</td>
+              <td><a href="{{ url_for('proyectos.detail', pid=p.id) }}" class="btn btn-secondary btn-sm btn-icon"><span class="material-icons-round">open_in_new</span></a></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div style="padding:10px 16px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
+        <span class="text-sm text-muted" id="clic-count">{{ total }} empresas</span>
+      </div>
+    </div>
+  </div>
+
+</div><!-- tabs-container -->
+{% endblock %}
+
+{% block scripts %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script>
+/* ── Data ── */
+const CLIN = {
+  pipeline:     {{ pipeline|tojson }},
+  municipios:   {{ por_municipio|tojson }},
+  rubros:       {{ rubros_raw|tojson }},
+  especialistas:{{ por_especialista|tojson }},
+  espReal:      {{ por_esp_real|tojson }},
+  anio:         {{ por_anio|tojson }},
+  periodos:     {{ por_periodo|tojson }},
+  mapaData:     {{ mapa_municipios_clinica|tojson }},
+};
+const CLIN_TOTALS = {
+  n:        {{ total }},
+  nom:      {{ total_facturado }},
+  real:     {{ total_facturado_real }},
+  avg_nom:  {{ monto_promedio|int }},
+  conv_nom: {{ total_convenios|default(0) }},
+  conv_real:{{ total_convenios_real|default(0) }},
+};
+const CLIN_IPC_FECHA = {{ ipc_fecha_val|tojson }};
+const totalEmpresas  = {{ total }};
+
+const C_TEAL   = '#00AEC3', C_NAVY = '#1E325C', C_GREEN = '#22A954';
+const C_PURPLE = '#592673', C_RED  = '#BE1717', C_GOLD  = '#F5A623';
+const pipelineColors = ['#CAE7EA','#A3D8E7','#74C9E3','#00AEC3','#007F8F','#22A954','#BE1717','#BE1717','#BE1717'];
+const rubroColors = [C_TEAL,C_NAVY,C_GREEN,C_PURPLE,C_GOLD,'#A3D8E7',C_RED,'#74C9E3','#2B4470','#B2DFDB','#CE93D8','#FFF176','#F48FB1','#80CBC4','#FFCC80','#B0BEC5','#E1BEE7','#DCEDC8'];
+
+function fmtM(v) {
+  if (v >= 1e9) return '$'+(v/1e9).toFixed(1)+'MM';
+  if (v >= 1e6) return '$'+(v/1e6).toFixed(0)+'M';
+  if (v >= 1e3) return '$'+(v/1e3).toFixed(0)+'K';
+  return '$'+Math.round(v).toLocaleString('es-AR');
+}
+
+let clinMode = 'n';
+
+/* ── Pipeline toggle: con/sin finalizados ───────────────────────── */
+let clinPipelineMode = 'all'; // 'all' | 'active'
+const PIPE_COLORS = ['#A3D8E7','#74C9E3','#00AEC3','#007F8F','#22A954','#1E325C'];
+
+function renderClinPipelineBars() {
+  const container = document.getElementById('clin-pipeline-bars');
+  if (!container) return;
+  const stages   = clinPipelineMode === 'active' ? CLIN.pipeline.slice(0,5) : CLIN.pipeline.slice(0,6);
+  const subtotal = stages.reduce((s,e) => s + e.n, 0);
+  const maxN     = Math.max(...stages.map(e => e.n), 1);
+  container.innerHTML = stages.map((e, i) => {
+    const barPct  = Math.round(e.n / maxN * 100);
+    const lblPct  = subtotal > 0 ? (e.n / subtotal * 100).toFixed(1) : '0.0';
+    return `<div style="margin-bottom:14px;">
+      <div style="display:flex;justify-content:space-between;margin-bottom:5px;align-items:center;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div style="width:22px;height:22px;border-radius:50%;background:${PIPE_COLORS[i]};display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:800;flex-shrink:0;">${i+1}</div>
+          <span style="font-weight:600;font-size:13.5px;">${e.label}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-family:'Encode Sans',sans-serif;font-weight:800;font-size:17px;color:${PIPE_COLORS[i]};">${e.n}</span>
+          <span class="text-muted text-sm">${lblPct}%</span>
+        </div>
+      </div>
+      <div class="progress-bar" style="height:9px;border-radius:5px;background:var(--surface-2);">
+        <div style="height:9px;width:${barPct}%;background:${PIPE_COLORS[i]};border-radius:5px;transition:width .4s;"></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderClinPipelineConv() {
+  const container = document.getElementById('clin-pipeline-conv');
+  if (!container) return;
+  const stages = clinPipelineMode === 'active' ? CLIN.pipeline.slice(0,5) : CLIN.pipeline.slice(0,6);
+  let html = '';
+  stages.forEach((e, i) => {
+    const bg = i % 2 === 0 ? 'var(--surface-2)' : 'var(--surface)';
+    html += `<div style="text-align:center;min-width:120px;padding:12px 8px;background:${bg};border-radius:8px;flex-shrink:0;">
+      <div style="font-family:'Encode Sans',sans-serif;font-size:22px;font-weight:800;color:var(--teal);">${e.n}</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:3px;line-height:1.3;">${e.label}</div>
+    </div>`;
+    if (i < stages.length - 1)
+      html += `<div style="font-size:20px;color:var(--border);padding:0 4px;flex-shrink:0;">›</div>`;
+  });
+  container.innerHTML = html;
+}
+
+function clinPipelineToggle() {
+  clinPipelineMode = clinPipelineMode === 'all' ? 'active' : 'all';
+  const btn = document.getElementById('clin-pipe-toggle');
+  const sub = document.getElementById('clin-pipe-subtitle');
+  const convSub = document.getElementById('clin-conv-subtitle');
+  if (clinPipelineMode === 'active') {
+    if (btn) { btn.textContent = 'Ver con finalizados'; btn.className = 'btn btn-primary btn-sm'; }
+    if (sub) sub.textContent = 'Sólo diagnósticos en ejecución (% sobre subtotal activo)';
+    if (convSub) convSub.textContent = 'Sin diagnósticos finalizados';
+  } else {
+    if (btn) { btn.textContent = 'Sin finalizados'; btn.className = 'btn btn-secondary btn-sm'; }
+    if (sub) sub.textContent = 'De captación a diagnóstico finalizado';
+    if (convSub) convSub.textContent = 'Todas las etapas';
+  }
+  renderClinPipelineBars();
+  renderClinPipelineConv();
+}
+
+function clinSetMode(mode) {
+  clinMode = mode;
+
+  /* Active button */
+  ['n','nom','real'].forEach(m => {
+    const btn = document.getElementById('clin-btn-'+m);
+    if (btn) btn.className = 'metric-btn' + (m === mode ? ' metric-btn-active' : '');
+  });
+
+  const isAnr  = mode !== 'n';
+  const isReal = mode === 'real';
+
+  /* ── Header ── */
+  const hdrVal = document.getElementById('clin-hdr-val');
+  const hdrLbl = document.getElementById('clin-hdr-label');
+  const hdrAvg = document.getElementById('clin-hdr-avg');
+  const hdrAvgLbl = document.getElementById('clin-hdr-avg-label');
+
+  if (!isAnr) {
+    if (hdrVal) hdrVal.textContent = CLIN_TOTALS.n;
+    if (hdrLbl) hdrLbl.textContent = 'empresas con diagnóstico';
+    if (hdrAvg) hdrAvg.textContent = '';
+    if (hdrAvgLbl) hdrAvgLbl.textContent = '';
+    // Convenios card: always show nominal in 'n' mode
+    const convVal0 = document.getElementById('clin-conv-val');
+    if (convVal0) convVal0.textContent = fmtM(CLIN_TOTALS.conv_nom);
+    document.querySelectorAll('.clin-conv-real,.clin-conv-total').forEach(el => {
+      el.textContent = '$'+Math.round(parseFloat(el.dataset.nom||0)).toLocaleString('es-AR');
+      el.style.color = '';
+    });
+    const gt0 = document.getElementById('clin-grand-total');
+    if (gt0) gt0.textContent = fmtM(CLIN_TOTALS.nom + CLIN_TOTALS.conv_nom);
+  } else {
+    const tot = isReal ? CLIN_TOTALS.real : CLIN_TOTALS.nom;
+    if (hdrVal) hdrVal.textContent = fmtM(tot);
+    if (hdrLbl) hdrLbl.textContent = isReal ? ('diagnósticos pesos '+CLIN_IPC_FECHA) : 'facturado diagnósticos';
+    if (hdrAvg) hdrAvg.textContent = '';
+    if (hdrAvgLbl) hdrAvgLbl.textContent = '';
+    // Update convenios stat card
+    const convVal = document.getElementById('clin-conv-val');
+    if (convVal) convVal.textContent = fmtM(isReal ? CLIN_TOTALS.conv_real : CLIN_TOTALS.conv_nom);
+    // Update convenios table cells
+    document.querySelectorAll('.clin-conv-real,.clin-conv-total').forEach(el => {
+      const v = isReal ? parseFloat(el.dataset.real||0) : parseFloat(el.dataset.nom||0);
+      el.textContent = '$'+Math.round(v).toLocaleString('es-AR');
+      el.style.color = isReal ? 'var(--green)' : '';
+    });
+    // Grand total row
+    const gt = document.getElementById('clin-grand-total');
+    if (gt) {
+      const diagTotal = isReal ? CLIN_TOTALS.real : CLIN_TOTALS.nom;
+      const convTotal = isReal ? CLIN_TOTALS.conv_real : CLIN_TOTALS.conv_nom;
+      gt.textContent = fmtM(diagTotal + convTotal);
+    }
+  }
+
+  /* ── Especialistas chart ── */
+  if (chartEsp) {
+    const src    = isAnr ? CLIN.espReal : CLIN.especialistas;
+    const key    = isReal ? 'total_real' : 'total_nom';
+    const avgKey = isReal ? 'monto_avg_real' : 'monto_avg';
+
+    chartEsp.data.labels = src.map(e => e.especialista);
+    chartEsp.data.datasets[0].data = src.map(e => e.finalizados);
+    chartEsp.data.datasets[1].data = isAnr
+      ? src.map(e => Math.max(0, (e[key]||0) - ((e.finalizados||0)*(e[avgKey]||0)) ))
+      : src.map(e => Math.max(0, e.n - e.finalizados - e.bajas));
+    chartEsp.data.datasets[2].data = src.map(e => e.bajas);
+    if (isAnr) {
+      chartEsp.data.datasets[0].label = 'Monto finalizados';
+      chartEsp.data.datasets[1].label = 'Monto en proceso';
+      chartEsp.data.datasets[2].label = 'Monto bajas';
+    } else {
+      chartEsp.data.datasets[0].label = 'Finalizados';
+      chartEsp.data.datasets[1].label = 'En proceso';
+      chartEsp.data.datasets[2].label = 'Bajas';
+    }
+    chartEsp.update();
+    const sub = document.getElementById('clin-esp-sublabel');
+    if (sub) sub.textContent = isAnr
+      ? (isReal ? 'Montos en pesos '+CLIN_IPC_FECHA : 'Montos nominales')
+      : 'Diagnósticos asignados, finalizados y monto promedio';
+  }
+
+  /* ── Especialistas table monto column ── */
+  const montoHdr = document.getElementById('clin-esp-monto-hdr');
+  if (montoHdr) {
+    montoHdr.textContent = isAnr
+      ? (isReal ? 'Monto prom. real ('+CLIN_IPC_FECHA+')' : 'Monto prom. nominal')
+      : 'Monto promedio';
+  }
+  document.querySelectorAll('.clin-esp-monto').forEach(el => {
+    const nom  = parseFloat(el.dataset.nom  || 0);
+    const real = parseFloat(el.dataset.real || 0);
+    if (!isAnr) {
+      el.textContent = nom > 0 ? '$'+(nom/1000).toFixed(0)+'K' : '—';
+      el.style.color = '';
+    } else {
+      const val = isReal ? real : nom;
+      el.textContent = val > 0 ? fmtM(val) : '—';
+      el.style.color = isReal ? 'var(--green)' : '';
+    }
+  });
+}
+
+/* ── Build charts ── */
+let chartEsp;
+
+document.addEventListener('DOMContentLoaded', () => {
+
+  /* Pipeline bars y etapas — render inicial vía JS */
+  renderClinPipelineBars();
+  renderClinPipelineConv();
+
+  /* Pipeline chart */
+  new Chart(document.getElementById('chart-pipeline'), {
+    type: 'bar',
+    data: {
+      labels: CLIN.pipeline.map(d => d.label),
+      datasets: [{ data: CLIN.pipeline.map(d => d.n), backgroundColor: pipelineColors, borderRadius:5, borderWidth:0 }]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false, indexAxis:'y',
+      plugins:{legend:{display:false}},
+      scales:{ x:{beginAtZero:true, max:totalEmpresas, grid:{color:'#EEF1F5'}}, y:{grid:{display:false},ticks:{font:{size:11}}} }
+    }
+  });
+
+  /* Municipios */
+  new Chart(document.getElementById('chart-municipios'), {
+    type: 'bar',
+    data: {
+      labels: CLIN.municipios.map(m => m.municipio),
+      datasets: [
+        { label:'Finalizados', data:CLIN.municipios.map(m=>m.finalizados), backgroundColor:C_GREEN+'CC', borderRadius:4, stack:'s' },
+        { label:'Resto',       data:CLIN.municipios.map(m=>m.n-m.finalizados), backgroundColor:C_TEAL+'88', borderRadius:4, stack:'s' },
+      ]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false, indexAxis:'y',
+      plugins:{legend:{position:'top'}},
+      scales:{ x:{stacked:true,beginAtZero:true,grid:{color:'#EEF1F5'}}, y:{stacked:true,grid:{display:false}} }
+    }
+  });
+
+  /* Rubros */
+  new Chart(document.getElementById('chart-rubros'), {
+    type: 'bar',
+    data: {
+      labels: CLIN.rubros.map(r => r.rubro.length>28?r.rubro.slice(0,28)+'…':r.rubro),
+      datasets: [{ data:CLIN.rubros.map(r=>r.n), backgroundColor:rubroColors.slice(0,CLIN.rubros.length), borderRadius:5, borderWidth:0 }]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false, indexAxis:'y',
+      plugins:{legend:{display:false}},
+      scales:{ x:{beginAtZero:true,grid:{color:'#EEF1F5'}}, y:{grid:{display:false},ticks:{font:{size:11}}} }
+    }
+  });
+
+  /* Especialistas */
+  chartEsp = new Chart(document.getElementById('chart-especialistas'), {
+    type: 'bar',
+    data: {
+      labels: CLIN.especialistas.map(e => e.especialista),
+      datasets: [
+        { label:'Finalizados', data:CLIN.especialistas.map(e=>e.finalizados), backgroundColor:C_GREEN+'CC', borderRadius:4, stack:'s' },
+        { label:'En proceso',  data:CLIN.especialistas.map(e=>Math.max(0,e.n-e.finalizados-e.bajas)), backgroundColor:C_TEAL+'AA', borderRadius:4, stack:'s' },
+        { label:'Bajas',       data:CLIN.especialistas.map(e=>e.bajas), backgroundColor:C_RED+'88', borderRadius:4, stack:'s' },
+      ]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{position:'top'}},
+      scales:{ x:{stacked:true,grid:{display:false},ticks:{maxRotation:35}}, y:{stacked:true,beginAtZero:true,grid:{color:'#EEF1F5'}} }
+    }
+  });
+
+  /* Años */
+  new Chart(document.getElementById('chart-anios'), {
+    type: 'bar',
+    data: {
+      labels: CLIN.anio.map(d=>d.anio),
+      datasets: [
+        { label:'Finalizados', data:CLIN.anio.map(d=>d.finalizados), backgroundColor:C_GREEN+'CC', borderRadius:4, stack:'s' },
+        { label:'Activos',     data:CLIN.anio.map(d=>d.activos),     backgroundColor:C_TEAL+'CC',  borderRadius:4, stack:'s' },
+        { label:'Suspendidos', data:CLIN.anio.map(d=>d.suspendidos), backgroundColor:C_RED+'88',   borderRadius:4, stack:'s' },
+      ]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{position:'top'}},
+      scales:{ x:{stacked:true,grid:{display:false}}, y:{stacked:true,beginAtZero:true,grid:{color:'#EEF1F5'}} }
+    }
+  });
+
+  /* Períodos */
+  if (document.getElementById('chart-periodos')) {
+    new Chart(document.getElementById('chart-periodos'), {
+      type: 'bar',
+      data: {
+        labels: [...CLIN.periodos].reverse().map(d=>d.periodo_facturacion),
+        datasets: [{ label:'Diagnósticos', data:[...CLIN.periodos].reverse().map(d=>d.n), backgroundColor:C_TEAL+'BB', borderRadius:5, borderWidth:0 }]
+      },
+      options: {
+        responsive:true, maintainAspectRatio:false,
+        plugins:{legend:{display:false}},
+        scales:{ x:{grid:{display:false},ticks:{maxRotation:40}}, y:{beginAtZero:true,grid:{color:'#EEF1F5'}} }
+      }
+    });
+  }
+
+  /* Live filter */
+  function filterCLIC() {
+    const q   = document.getElementById('clic-search').value.toLowerCase();
+    const sit = document.getElementById('clic-situacion').value;
+    const anio= document.getElementById('clic-anio').value;
+    const esp = document.getElementById('clic-especialista').value;
+    let vis = 0;
+    document.querySelectorAll('#clic-table tbody tr').forEach(row => {
+      const mQ = !q   || row.dataset.nombre.includes(q) || row.dataset.cuit.includes(q);
+      const mS = !sit || row.dataset.situacion === sit;
+      const mA = !anio|| row.dataset.anio === anio;
+      const mE = !esp || row.dataset.especialista === esp;
+      const show = mQ && mS && mA && mE;
+      row.style.display = show ? '' : 'none';
+      if (show) vis++;
+    });
+    document.getElementById('clic-count').textContent = vis + ' empresas';
+  }
+  ['clic-search','clic-situacion','clic-anio','clic-especialista'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener(id==='clic-search'?'input':'change', filterCLIC);
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════
+   MAPA DE DIAGNÓSTICOS — CLÍNICA TECNOLÓGICA
+   Colorea los municipios según cantidad de diagnósticos finalizados
+═══════════════════════════════════════════════════════════════ */
+let clinicaMap    = null;
+let clinicaGeojson = null;
+
+const CLIN_MAPA_LOOKUP = {};
+CLIN.mapaData.forEach(m => { CLIN_MAPA_LOOKUP[m.municipio] = m; });
+
+const CLIN_MAPA_RAMP = ['#EEF3F7','#C5EDD9','#9BD6C0','#22A954','#1A8044','#1E325C'];
+
+function clinMapaColor(val, maxVal) {
+  if (!val || maxVal === 0) return '#EEF3F7';
+  const t = Math.sqrt(val / maxVal);
+  const idx = Math.min(5, Math.floor(t * 5) + (t > 0 ? 1 : 0));
+  return CLIN_MAPA_RAMP[idx];
+}
+
+function clinMapaPopup(name, d) {
+  return `<div style="font-family:'Encode Sans',sans-serif;min-width:180px;padding:2px 4px;">
+    <div style="font-weight:800;font-size:14px;color:#1E325C;margin-bottom:7px;border-bottom:2px solid #1E325C22;padding-bottom:5px;">${name}</div>
+    <table style="width:100%;border-collapse:collapse;font-size:12px;">
+      <tr><td style="color:#6B82A0;padding:2px 0;">Diagnósticos finalizados</td>
+          <td style="font-weight:700;text-align:right;color:#22A954;">${d.finalizados}</td></tr>
+      <tr><td style="color:#6B82A0;padding:2px 0;">Total empresas</td>
+          <td style="font-weight:700;text-align:right;">${d.n}</td></tr>
+    </table>
+  </div>`;
+}
+
+function clinMapaUpdateLegend(maxVal) {
+  const safe = (maxVal && isFinite(maxVal)) ? maxVal : 0;
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v || 0; };
+  if (safe > 0) {
+    set('clin-mapa-legend-q1',  Math.round(safe * 0.04));
+    set('clin-mapa-legend-mid', Math.round(safe * 0.25));
+    set('clin-mapa-legend-q3',  Math.round(safe * 0.64));
+    set('clin-mapa-legend-max', safe);
+  } else {
+    ['clin-mapa-legend-q1','clin-mapa-legend-mid','clin-mapa-legend-q3','clin-mapa-legend-max']
+      .forEach(id => { const el = document.getElementById(id); if (el) el.textContent = '—'; });
+  }
+}
+
+function clinMapaUpdateRanking() {
+  const sorted = [...CLIN.mapaData].sort((a, b) => b.finalizados - a.finalizados);
+  const tbody = document.getElementById('clin-mapa-rank-body');
+  if (!tbody) return;
+  tbody.innerHTML = sorted.map((m, i) => `
+    <tr style="border-bottom:1px solid var(--border);" class="clin-mapa-rank-row" data-mun="${m.municipio}">
+      <td style="padding:4px 8px;font-size:10.5px;text-align:center;color:var(--text-muted);">${i+1}</td>
+      <td style="padding:4px 10px;font-size:12px;font-weight:600;">${m.municipio}</td>
+      <td style="padding:4px 8px;font-size:11.5px;text-align:right;">${m.finalizados}</td>
+    </tr>`).join('');
+
+  tbody.querySelectorAll('.clin-mapa-rank-row').forEach(row => {
+    row.addEventListener('mouseenter', () => clinMapaHighlight(row.dataset.mun, true));
+    row.addEventListener('mouseleave', () => clinMapaHighlight(row.dataset.mun, false));
+  });
+}
+
+function clinMapaHighlight(name, on) {
+  if (!clinicaGeojson) return;
+  clinicaGeojson.eachLayer(layer => {
+    if (layer.feature.properties.nombre === name) {
+      if (on) layer.setStyle({ weight: 2.5, color: '#F5A623', fillOpacity: 1 });
+      else    clinicaGeojson.resetStyle(layer);
+    }
+  });
+}
+
+function onClinicaMapTabClick() {
+  setTimeout(() => {
+    if (!clinicaMap) {
+      const SW = L.latLng(-42.5, -64.5), NE = L.latLng(-33.0, -56.0);
+      const bounds = L.latLngBounds(SW, NE);
+
+      clinicaMap = L.map('clinica-map', {
+        center: [-37.5, -60.5], zoom: 6,
+        maxBounds: bounds, maxBoundsViscosity: 1.0,
+        minZoom: 6, maxZoom: 12,
+        zoomControl: true,
+      });
+
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
+        attribution: '© OpenStreetMap, © CARTO',
+        subdomains: 'abcd', maxZoom: 18,
+      }).addTo(clinicaMap);
+
+      const loadEl = document.getElementById('clin-mapa-loading');
+      if (loadEl) loadEl.style.display = '';
+
+      const vals   = CLIN.mapaData.map(m => m.finalizados);
+      const maxVal = Math.max(...vals, 1);
+
+      fetch('/static/gba_municipios.geojson')
+        .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then(geojson => {
+          if (loadEl) loadEl.style.display = 'none';
+
+          clinicaGeojson = L.geoJSON(geojson, {
+            style: feature => {
+              const d   = CLIN_MAPA_LOOKUP[feature.properties.nombre];
+              const val = d ? d.finalizados : 0;
+              return {
+                fillColor:   clinMapaColor(val, maxVal),
+                fillOpacity: val > 0 ? 0.85 : 0.25,
+                color:       val > 0 ? '#1E325C' : '#C8D8E4',
+                weight:      val > 0 ? 1.2 : 0.4,
+              };
+            },
+            onEachFeature: (feature, layer) => {
+              const name = feature.properties.nombre;
+              const d    = CLIN_MAPA_LOOKUP[name];
+              layer.on('mouseover', e => {
+                e.target.setStyle({ weight: 2.5, color: '#22A954', fillOpacity: 1 });
+                e.target.bringToFront();
+              });
+              layer.on('mouseout', () => clinicaGeojson.resetStyle(layer));
+              if (d && d.finalizados > 0) {
+                layer.bindPopup(clinMapaPopup(name, d), { maxWidth: 220 });
+              } else if (d) {
+                layer.bindPopup(clinMapaPopup(name, d), { maxWidth: 220 });
+              } else {
+                layer.bindTooltip(name, { direction: 'top', opacity: 0.65 });
+              }
+            }
+          }).addTo(clinicaMap);
+
+          clinicaMap.fitBounds(clinicaGeojson.getBounds(), { padding: [10, 10] });
+
+          L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png', {
+            subdomains: 'abcd', maxZoom: 18, opacity: 0.7,
+          }).addTo(clinicaMap);
+
+          clinMapaUpdateLegend(maxVal);
+          clinMapaUpdateRanking();
+        })
+        .catch(err => {
+          if (loadEl) loadEl.innerHTML =
+            `<span style="color:var(--red);">Error: ${err.message}</span>`;
+        });
+    }
+    clinicaMap.invalidateSize();
+  }, 200);
+}
+</script>
+{% endblock %}

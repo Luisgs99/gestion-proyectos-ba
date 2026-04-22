@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}SCTeI — Gestión de Proyectos{% endblock %} — Subsecretaría de Ciencia, Tecnología e Innovación</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Encode+Sans:wght@300;400;500;600;700;800&family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+{% block extra_head %}{% endblock %}
+</head>
+<body>
+
+<div class="app-wrapper">
+  <!-- Sidebar -->
+  <nav class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <!-- Logo GBA oficial (isotipo + texto) -->
+      <div class="brand-logo-gba">
+        <svg viewBox="0 0 38 38" fill="none" xmlns="http://www.w3.org/2000/svg" width="38" height="38">
+          <rect width="38" height="38" rx="8" fill="#00AEC3"/>
+          <!-- Mapa estilizado Provincia de Buenos Aires -->
+          <path d="M8 10 L30 10 L30 16 L26 16 L26 20 L30 20 L30 28 L22 28 L18 24 L14 28 L8 28 L8 22 L12 18 L8 14 Z"
+                fill="white" opacity="0.95"/>
+        </svg>
+      </div>
+      <div class="brand-text">
+        <span class="brand-title">Buenos Aires</span>
+        <span class="brand-sub">Ciencia, Tecnología e Innovación</span>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <span class="sidebar-label">General</span>
+      <a href="{{ url_for('dashboard.dashboard') }}" class="nav-item {% if request.endpoint == 'dashboard.dashboard' %}active{% endif %}" title="Dashboard">
+        <span class="material-icons-round">dashboard</span>
+        <span>Dashboard</span>
+      </a>
+      <a href="{{ url_for('programas.list') }}" class="nav-item {% if 'programas.' in (request.endpoint or '') %}active{% endif %}" title="Programas">
+        <span class="material-icons-round">folder_special</span>
+        <span>Programas</span>
+      </a>
+      <a href="{{ url_for('proyectos.list') }}" class="nav-item {% if 'proyectos.' in (request.endpoint or '') %}active{% endif %}" title="Proyectos">
+        <span class="material-icons-round">rocket_launch</span>
+        <span>Proyectos</span>
+      </a>
+      <a href="{{ url_for('instituciones.list') }}" class="nav-item {% if 'instituciones.' in (request.endpoint or '') %}active{% endif %}" title="Instituciones">
+        <span class="material-icons-round">account_balance</span>
+        <span>Instituciones</span>
+      </a>
+      <a href="{{ url_for('adoptantes.list') }}" class="nav-item {% if 'adoptantes.' in (request.endpoint or '') %}active{% endif %}" title="Adoptantes">
+        <span class="material-icons-round">handshake</span>
+        <span>Adoptantes</span>
+      </a>
+      <a href="{{ url_for('admin.organigrama') }}" class="nav-item {% if request.endpoint == 'admin.organigrama' %}active{% endif %}" title="Organigrama">
+        <span class="material-icons-round">account_tree</span>
+        <span>Organigrama</span>
+      </a>
+    </div>
+
+    <div class="sidebar-section">
+      <span class="sidebar-label">Análisis</span>
+      <a href="{{ url_for('reportes.index') }}" class="nav-item {% if request.endpoint in ('reportes.index','reportes.exportar') %}active{% endif %}" title="Reportes">
+        <span class="material-icons-round">bar_chart</span>
+        <span>Reportes</span>
+      </a>
+      <a href="{{ url_for('reportes.ipc') }}" class="nav-item {% if 'ipc' in (request.endpoint or '') %}active{% endif %}" style="padding-left:28px;font-size:12.5px;" title="Actualización IPC">
+        <span class="material-icons-round" style="font-size:16px;">trending_up</span>
+        <span>Actualiz. IPC</span>
+      </a>
+    </div>
+
+    {% if is_admin() or can_edit() %}
+    <div class="sidebar-section">
+      <span class="sidebar-label">Administración</span>
+      {% if can_edit() %}
+      <a href="{{ url_for('importacion.importar') }}" class="nav-item {% if request.endpoint == 'importacion.importar' %}active{% endif %}" title="Importar Excel">
+        <span class="material-icons-round">upload_file</span>
+        <span>Importar Excel</span>
+      </a>
+      <a href="{{ url_for('sync.index') }}" class="nav-item {% if 'sync.' in (request.endpoint or '') %}active{% endif %}" title="Sync Sheets">
+        <span class="material-icons-round">sync</span>
+        <span>Sync Sheets</span>
+      </a>
+      {% endif %}
+      {% if is_admin() %}
+      <a href="{{ url_for('admin.filtros') }}" class="nav-item {% if request.endpoint == 'admin.filtros' %}active{% endif %}" title="Filtros">
+        <span class="material-icons-round">tune</span>
+        <span>Filtros</span>
+      </a>
+      <a href="{{ url_for('admin.usuarios') }}" class="nav-item {% if request.endpoint == 'admin.usuarios' %}active{% endif %}" title="Usuarios">
+        <span class="material-icons-round">group</span>
+        <span>Usuarios</span>
+      </a>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <button class="sidebar-collapse-btn" id="sidebar-collapse-btn" onclick="toggleSidebarCollapse()" title="Contraer menú">
+      <span class="material-icons-round" id="sidebar-collapse-icon">chevron_left</span>
+    </button>
+
+    <div class="sidebar-footer">
+      <div class="user-pill">
+        <div class="user-avatar">{{ session.nombre[0] }}</div>
+        <div class="user-info">
+          <span class="user-name">{{ session.nombre }}</span>
+          <span class="user-role role-{{ session.rol }}">{{ session.rol }}</span>
+        </div>
+      </div>
+      <a href="{{ url_for('auth.logout') }}" class="btn-logout" title="Cerrar sesión">
+        <span class="material-icons-round">logout</span>
+      </a>
+    </div>
+  </nav>
+
+  <!-- Main content -->
+  <main class="main-content">
+    <div class="topbar">
+      <button class="sidebar-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')">
+        <span class="material-icons-round">menu</span>
+      </button>
+      <div class="topbar-breadcrumb">
+        <span>{% block breadcrumb %}Dashboard{% endblock %}</span>
+      </div>
+      <div class="topbar-actions">
+        {% block topbar_actions %}{% endblock %}
+      </div>
+    </div>
+
+    <div class="content-area">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}
+        <div class="alert alert-{{ category }}">
+          <span class="material-icons-round">{% if category == 'success' %}check_circle{% elif category == 'danger' %}error{% elif category == 'warning' %}warning{% else %}info{% endif %}</span>
+          {{ message }}
+          <button onclick="this.parentElement.remove()" class="alert-close">×</button>
+        </div>
+        {% endfor %}
+      {% endwith %}
+
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+</div>
+
+<!-- Modal genérico -->
+<div id="modal-overlay" class="modal-overlay" onclick="closeModal()">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h3 id="modal-title">Modal</h3>
+      <button onclick="closeModal()" class="modal-close"><span class="material-icons-round">close</span></button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+<script>
+(function() {
+  const sidebar = document.getElementById('sidebar');
+  const icon    = document.getElementById('sidebar-collapse-icon');
+  if (localStorage.getItem('sidebarCollapsed') === 'true') {
+    sidebar.classList.add('collapsed');
+    if (icon) icon.textContent = 'chevron_right';
+  }
+})();
+function toggleSidebarCollapse() {
+  const sidebar = document.getElementById('sidebar');
+  const icon    = document.getElementById('sidebar-collapse-icon');
+  const nowCollapsed = sidebar.classList.toggle('collapsed');
+  if (icon) icon.textContent = nowCollapsed ? 'chevron_right' : 'chevron_left';
+  localStorage.setItem('sidebarCollapsed', nowCollapsed);
+}
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

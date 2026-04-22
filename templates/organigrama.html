@@ -1,0 +1,309 @@
+{% extends "base.html" %}
+{% block title %}Organigrama — SCTeI{% endblock %}
+{% block breadcrumb %}Organigrama institucional{% endblock %}
+
+{% block topbar_actions %}
+  {% if can_edit() %}
+  <button class="btn btn-primary btn-sm" onclick="openAddModal()">
+    <span class="material-icons-round">person_add</span> Agregar persona
+  </button>
+  {% endif %}
+{% endblock %}
+
+{% block extra_head %}
+<style>
+.org-canvas-wrap { overflow-x: auto; padding: 24px 0 48px; }
+.org-canvas      { position: relative; width: 1490px; height: 1090px; margin: 0 auto; }
+.org-card {
+  position: absolute; background: var(--surface);
+  border-radius: 10px; box-shadow: 0 2px 8px rgba(14,31,60,.10);
+  border: 1.5px solid var(--border); overflow: hidden;
+}
+.org-card-head {
+  padding: 8px 10px 6px; text-align: center;
+  border-bottom: 1px solid var(--border); background: var(--surface-2);
+}
+.org-badge {
+  display: inline-block; color: #fff; font-size: 8.5px; font-weight: 700;
+  padding: 2px 10px; border-radius: 20px; letter-spacing: .08em; margin-bottom: 4px;
+  font-family: 'Encode Sans', sans-serif;
+}
+.org-card-title { font-size: 11px; font-weight: 700; color: var(--navy); line-height: 1.35; font-family: 'Encode Sans', sans-serif; }
+.org-card-body  { padding: 5px 7px; }
+.org-person {
+  background: var(--surface-2); border-radius: 5px; padding: 3px 7px; margin-bottom: 3px;
+  border-left: 3px solid var(--border);
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 4px;
+  transition: background .12s;
+}
+.org-person:hover { background: var(--teal-pale); }
+.org-person-text  { flex: 1; min-width: 0; }
+.org-person-name  { font-size: 10.5px; font-weight: 600; color: var(--text); line-height: 1.3; }
+.org-person-cargo { font-size: 9px; color: var(--text-muted); font-style: italic; }
+.org-section-label {
+  font-size: 8.5px; color: var(--text-muted); text-transform: uppercase;
+  letter-spacing: .07em; font-weight: 700; margin: 5px 0 2px 2px;
+  font-family: 'Encode Sans', sans-serif;
+}
+.org-remove-btn {
+  background: none; border: none; cursor: pointer; color: var(--text-muted);
+  padding: 0; line-height: 1; opacity: 0; transition: opacity .15s;
+  font-size: 14px; flex-shrink: 0; margin-top: 1px;
+}
+.org-person:hover .org-remove-btn { opacity: 1; }
+.org-remove-btn:hover { color: var(--red); }
+.org-l1    { border-color: var(--gold)   !important; }
+.org-l2    { border-color: var(--navy)   !important; }
+.org-l3    { border-color: var(--teal)   !important; }
+.org-staff { border-color: var(--purple) !important; }
+.org-badge-l1     { background: var(--gold); }
+.org-badge-l2     { background: var(--navy); }
+.org-badge-l3     { background: var(--teal); }
+.org-badge-staff  { background: var(--purple); }
+.org-person-l1        { border-left-color: var(--gold);   }
+.org-person-l2        { border-left-color: var(--navy);   }
+.org-person-l3        { border-left-color: var(--teal);   }
+.org-person-staff     { border-left-color: var(--purple); }
+.org-person-consultor { border-left-color: var(--green);  }
+.org-legend {
+  display: flex; gap: 18px; align-items: center; flex-wrap: wrap;
+  padding: 10px 16px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 8px; margin-bottom: 20px;
+}
+.org-legend-item { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--text-mid); }
+.org-legend-sq   { width: 13px; height: 13px; border-radius: 3px; flex-shrink: 0; }
+#org-modal-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(10,22,40,.55); z-index: 2000;
+  align-items: center; justify-content: center;
+}
+#org-modal-overlay.open { display: flex; }
+#org-modal {
+  background: var(--surface); border-radius: 12px;
+  padding: 24px 28px; width: 420px; max-width: 95vw;
+  box-shadow: 0 8px 32px rgba(10,22,40,.25);
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="org-legend mb-3">
+  <div class="org-legend-item"><div class="org-legend-sq" style="background:var(--gold)"></div>Nivel 1 — Subsecretario/a</div>
+  <div class="org-legend-item"><div class="org-legend-sq" style="background:var(--purple)"></div>Dependencia lateral (staff)</div>
+  <div class="org-legend-item"><div class="org-legend-sq" style="background:var(--navy)"></div>Nivel 2 — Dir. Provincial</div>
+  <div class="org-legend-item"><div class="org-legend-sq" style="background:var(--teal)"></div>Nivel 3 — Dirección</div>
+  <div class="org-legend-item"><div class="org-legend-sq" style="background:var(--green)"></div>Consultor/a</div>
+  <span class="text-sm text-muted" style="margin-left:auto;">
+    <span class="material-icons-round" style="font-size:14px;vertical-align:middle;">swap_horiz</span>
+    Scroll para ver el diagrama completo
+  </span>
+</div>
+
+<div class="org-canvas-wrap">
+  <div class="org-canvas">
+
+    <svg style="position:absolute;top:0;left:0;pointer-events:none;overflow:visible" width="1490" height="1090">
+      <line x1="315"  y1="110" x2="593"  y2="110" stroke="var(--purple)" stroke-width="1.5" stroke-dasharray="6 4"/>
+      <line x1="888"  y1="110" x2="1175" y2="110" stroke="var(--purple)" stroke-width="1.5" stroke-dasharray="6 4"/>
+      <line x1="740" y1="285" x2="740" y2="390" stroke="var(--navy)" stroke-width="1.5"/>
+      <line x1="375" y1="390" x2="1106" y2="390" stroke="var(--navy)" stroke-width="1.5"/>
+      <line x1="375"  y1="390" x2="375"  y2="430" stroke="var(--navy)" stroke-width="1.5"/>
+      <line x1="1106" y1="390" x2="1106" y2="430" stroke="var(--navy)" stroke-width="1.5"/>
+      <line x1="375" y1="548" x2="375" y2="628" stroke="var(--navy)" stroke-width="1.5"/>
+      <line x1="132" y1="592" x2="618" y2="592" stroke="var(--navy)" stroke-width="1.5"/>
+      <line x1="132" y1="592" x2="132" y2="628" stroke="var(--navy)" stroke-width="1.5"/>
+      <line x1="618" y1="592" x2="618" y2="628" stroke="var(--navy)" stroke-width="1.5"/>
+      <line x1="1106" y1="548" x2="1106" y2="628" stroke="var(--navy)" stroke-width="1.5"/>
+      <line x1="861"  y1="592" x2="1349" y2="592" stroke="var(--navy)" stroke-width="1.5"/>
+      <line x1="861"  y1="592" x2="861"  y2="628" stroke="var(--navy)" stroke-width="1.5"/>
+      <line x1="1349" y1="592" x2="1349" y2="628" stroke="var(--navy)" stroke-width="1.5"/>
+    </svg>
+
+    {% set tipo_badge = {'l1':'NIVEL 1','l2':'NIVEL 2','l3':'NIVEL 3','staff':'STAFF'} %}
+    {% set tipo_class = {'l1':'org-l1','l2':'org-l2','l3':'org-l3','staff':'org-staff'} %}
+    {% set badge_cls  = {'l1':'org-badge-l1','l2':'org-badge-l2','l3':'org-badge-l3','staff':'org-badge-staff'} %}
+    {% set person_cls = {'l1':'org-person-l1','l2':'org-person-l2','l3':'org-person-l3','staff':'org-person-staff'} %}
+
+    {% for u in unidades %}
+    <div class="org-card {{ tipo_class[u.tipo] }}"
+         style="left:{{ u.pos_x }}px;top:{{ u.pos_y }}px;width:{{ u.ancho }}px;"
+         data-unidad-id="{{ u.id }}" data-unidad-tipo="{{ u.tipo }}">
+      <div class="org-card-head">
+        <div><span class="org-badge {{ badge_cls[u.tipo] }}">{{ tipo_badge[u.tipo] }}</span></div>
+        <div class="org-card-title">{{ u.nombre }}</div>
+      </div>
+      <div class="org-card-body">
+        {% for p in u.personas %}
+          {% if p.subtipo == 'label' %}
+            <div class="org-section-label">{{ p.nombre }}</div>
+          {% else %}
+            <div class="org-person {{ 'org-person-consultor' if p.subtipo == 'consultor' else person_cls[u.tipo] }}"
+                 id="org-p-{{ p.id }}">
+              <div class="org-person-text">
+                <div class="org-person-name">{{ p.nombre }}</div>
+                {% if p.cargo %}<div class="org-person-cargo">{{ p.cargo }}</div>{% endif %}
+              </div>
+              {% if can_edit() %}
+              <button class="org-remove-btn" title="Quitar persona"
+                      onclick="removePerson({{ p.id }}, '{{ p.nombre|replace("'","\\'") }}')">
+                <span class="material-icons-round">close</span>
+              </button>
+              {% endif %}
+            </div>
+          {% endif %}
+        {% endfor %}
+        {% if can_edit() %}
+        <button class="btn btn-secondary btn-sm" style="width:100%;margin-top:5px;font-size:10.5px;"
+                onclick="openAddModal({{ u.id }}, '{{ u.nombre|replace("'","\\'") }}')">
+          <span class="material-icons-round" style="font-size:13px;">add</span> Agregar
+        </button>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+
+  </div>
+</div>
+
+{% if can_edit() %}
+<div id="org-modal-overlay">
+  <div id="org-modal">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
+      <div>
+        <div style="font-family:'Encode Sans',sans-serif;font-size:16px;font-weight:800;color:var(--navy);">Agregar persona</div>
+        <div id="org-modal-unidad-label" class="text-sm text-muted"></div>
+      </div>
+      <button onclick="closeAddModal()" style="background:none;border:none;cursor:pointer;color:var(--text-muted);">
+        <span class="material-icons-round">close</span>
+      </button>
+    </div>
+    <div style="margin-bottom:12px;">
+      <label class="form-label">Unidad <span style="color:var(--red)">*</span></label>
+      <select id="org-sel-unidad" class="form-control" onchange="updateUnidadLabel()">
+        {% for u in unidades %}
+        <option value="{{ u.id }}">{{ u.nombre }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div style="margin-bottom:12px;">
+      <label class="form-label">Nombre completo <span style="color:var(--red)">*</span></label>
+      <input type="text" id="org-input-nombre" class="form-control" placeholder="Ej: María González">
+    </div>
+    <div style="margin-bottom:12px;">
+      <label class="form-label">Cargo / Función <span style="color:var(--red)">*</span></label>
+      <input type="text" id="org-input-cargo" class="form-control" placeholder="Ej: Personal de planta">
+    </div>
+    <div style="margin-bottom:20px;">
+      <label class="form-label">Tipo de designación</label>
+      <select id="org-input-subtipo" class="form-control">
+        <option value="">Personal de planta / Asesor</option>
+        <option value="consultor">Consultor/a (contrato de servicios)</option>
+      </select>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button class="btn btn-secondary" onclick="closeAddModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="submitAddPerson()">
+        <span class="material-icons-round">person_add</span> Agregar
+      </button>
+    </div>
+    <div id="org-modal-err" class="text-sm" style="color:var(--red);margin-top:8px;display:none;"></div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+const ORG_PERSON_CLS = { l1:'org-person-l1', l2:'org-person-l2', l3:'org-person-l3', staff:'org-person-staff' };
+
+function updateUnidadLabel() {
+  const sel = document.getElementById('org-sel-unidad');
+  const lbl = document.getElementById('org-modal-unidad-label');
+  if (lbl && sel) lbl.textContent = sel.options[sel.selectedIndex]?.text || '';
+}
+
+function openAddModal(uid, unidadNombre) {
+  document.getElementById('org-modal-overlay').classList.add('open');
+  if (uid) {
+    document.getElementById('org-sel-unidad').value = uid;
+    document.getElementById('org-modal-unidad-label').textContent = unidadNombre || '';
+  }
+  document.getElementById('org-input-nombre').value  = '';
+  document.getElementById('org-input-cargo').value   = '';
+  document.getElementById('org-input-subtipo').value = '';
+  document.getElementById('org-modal-err').style.display = 'none';
+  setTimeout(() => document.getElementById('org-input-nombre').focus(), 80);
+}
+function closeAddModal() {
+  document.getElementById('org-modal-overlay').classList.remove('open');
+}
+document.getElementById('org-modal-overlay')?.addEventListener('click', e => {
+  if (e.target.id === 'org-modal-overlay') closeAddModal();
+});
+
+function submitAddPerson() {
+  const uid    = document.getElementById('org-sel-unidad').value;
+  const nombre = document.getElementById('org-input-nombre').value.trim();
+  const cargo  = document.getElementById('org-input-cargo').value.trim();
+  const subtipo= document.getElementById('org-input-subtipo').value;
+  const errEl  = document.getElementById('org-modal-err');
+
+  if (!nombre || !cargo) {
+    errEl.textContent = 'El nombre y el cargo son obligatorios.';
+    errEl.style.display = 'block'; return;
+  }
+  errEl.style.display = 'none';
+
+  const fd = new FormData();
+  fd.append('unidad_id', uid);
+  fd.append('nombre', nombre);
+  fd.append('cargo', cargo);
+  if (subtipo) fd.append('subtipo', subtipo);
+
+  fetch('/organigrama/add_persona', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) { errEl.textContent = data.error; errEl.style.display = 'block'; return; }
+      closeAddModal();
+      const card = document.querySelector(`[data-unidad-id="${uid}"]`);
+      if (!card) { location.reload(); return; }
+      const tipo  = card.dataset.unidadTipo;
+      const cls   = data.subtipo === 'consultor' ? 'org-person-consultor' : (ORG_PERSON_CLS[tipo] || '');
+      const body  = card.querySelector('.org-card-body');
+      const addBtn= body.querySelector('button');
+      const div   = document.createElement('div');
+      div.id        = `org-p-${data.id}`;
+      div.className = `org-person ${cls}`;
+      div.innerHTML = `
+        <div class="org-person-text">
+          <div class="org-person-name">${data.nombre}</div>
+          <div class="org-person-cargo">${data.cargo}</div>
+        </div>
+        <button class="org-remove-btn" title="Quitar persona"
+                onclick="removePerson(${data.id}, '${data.nombre.replace(/'/g,"\\'")}')">
+          <span class="material-icons-round">close</span>
+        </button>`;
+      body.insertBefore(div, addBtn);
+    })
+    .catch(() => { errEl.textContent = 'Error al guardar.'; errEl.style.display = 'block'; });
+}
+
+function removePerson(pid, nombre) {
+  if (!confirm(`¿Quitar a ${nombre} del organigrama?`)) return;
+  fetch(`/organigrama/remove_persona/${pid}`, { method: 'POST' })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        const el = document.getElementById(`org-p-${pid}`);
+        if (el) {
+          el.style.transition = 'opacity .2s, max-height .2s';
+          el.style.opacity = '0';
+          el.style.maxHeight = '0';
+          el.style.overflow = 'hidden';
+          setTimeout(() => el.remove(), 220);
+        }
+      }
+    });
+}
+</script>
+{% endblock %}

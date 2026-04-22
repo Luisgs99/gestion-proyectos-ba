@@ -1,0 +1,389 @@
+{% extends "base.html" %}
+{% block title %}{{ proyecto.nombre }}{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('proyectos.list') }}" style="color:var(--text-muted);text-decoration:none;">Proyectos</a>
+  / {{ proyecto.nombre }}
+{% endblock %}
+
+{% block topbar_actions %}
+  {% if can_edit() %}
+  <a href="{{ url_for('proyectos.editar', pid=proyecto.id) }}" class="btn btn-secondary btn-sm">
+    <span class="material-icons-round">edit</span> Editar
+  </a>
+  {% endif %}
+  {% if is_admin() %}
+  <form id="del-form-{{ proyecto.id }}" method="post" action="{{ url_for('proyectos.eliminar', pid=proyecto.id) }}" style="display:inline;">
+    <button type="button" class="btn btn-danger btn-sm" onclick="confirmDelete('¿Eliminar este proyecto y todos sus datos?','del-form-{{ proyecto.id }}')">
+      <span class="material-icons-round">delete</span>
+    </button>
+  </form>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+<!-- Project header -->
+<div style="background:linear-gradient(135deg,{{ proyecto.programa_color }},{{ proyecto.programa_color }}88);border-radius:12px;padding:22px 28px;margin-bottom:20px;color:#fff;display:flex;align-items:flex-start;gap:20px;flex-wrap:wrap;">
+  <div style="flex:1;min-width:200px;">
+    <div style="font-size:11px;opacity:.7;font-family:'IBM Plex Mono',monospace;margin-bottom:4px;">
+      {{ proyecto.programa_codigo }} · {% if proyecto.codigo %}{{ proyecto.codigo }} · {% endif %}{{ proyecto.area_tematica or '' }}
+    </div>
+    <h1 style="font-family:'Sora',sans-serif;font-size:22px;font-weight:700;margin-bottom:8px;">{{ proyecto.nombre }}</h1>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+      <span class="badge badge-{{ proyecto.estado }}" style="background:rgba(255,255,255,.2);color:#fff;border:1px solid rgba(255,255,255,.3);">{{ proyecto.estado|replace('_',' ') }}</span>
+      {% if proyecto.municipio %}<span style="font-size:12px;opacity:.8;">📍 {{ proyecto.municipio }}{% if proyecto.localidad %}, {{ proyecto.localidad }}{% endif %}</span>{% endif %}
+    </div>
+  </div>
+  <!-- Estado / avance -->
+  <div style="text-align:center;background:rgba(255,255,255,.15);border-radius:12px;padding:16px 24px;backdrop-filter:blur(4px);min-width:160px;">
+    {% if proyecto.programa_codigo == 'FITBA' %}
+      {% set _elabels = {'activo':'En ejecución','finalizado':'Finalizado','en_finalizacion':'En finalización','suspendido':'Rescindido'} %}
+      {% set _eicons  = {'activo':'play_circle','finalizado':'check_circle','en_finalizacion':'hourglass_bottom','suspendido':'cancel'} %}
+      <div style="font-size:10px;opacity:.65;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">Estado de ejecución</div>
+      <div style="display:flex;align-items:center;justify-content:center;gap:6px;">
+        <span class="material-icons-round" style="font-size:24px;">{{ _eicons.get(proyecto.estado or '', 'help_outline') }}</span>
+        <span style="font-family:'Sora',sans-serif;font-size:18px;font-weight:700;line-height:1.2;">{{ _elabels.get(proyecto.estado or '', proyecto.estado or '—') }}</span>
+      </div>
+      {% if total_hitos > 0 %}
+      <div style="font-size:11px;opacity:.55;margin-top:8px;">{{ porcentaje }}% hitos · {{ completados }}/{{ total_hitos }}</div>
+      {% endif %}
+    {% else %}
+      <div style="font-family:'Sora',sans-serif;font-size:36px;font-weight:700;">{{ porcentaje }}%</div>
+      <div style="font-size:12px;opacity:.75;">avance global</div>
+      <div style="font-size:11px;opacity:.6;margin-top:3px;">{{ completados }}/{{ total_hitos }} hitos</div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Info row -->
+{% if proyecto.programa_codigo == 'FITBA' %}
+  {% set _elabels = {'activo':'En ejecución','finalizado':'Finalizado','en_finalizacion':'En finalización','suspendido':'Rescindido'} %}
+  {% set _ecolors = {'activo':'var(--green)','finalizado':'var(--blue)','en_finalizacion':'var(--gold)','suspendido':'var(--red)'} %}
+  {% set _eicons  = {'activo':'play_circle','finalizado':'check_circle','en_finalizacion':'hourglass_bottom','suspendido':'cancel'} %}
+  {% set _ecolor  = _ecolors.get(proyecto.estado or '', 'var(--text-muted)') %}
+{% endif %}
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:16px;margin-bottom:24px;">
+  <div class="card card-body">
+    <div class="section-title mb-1">Beneficiario</div>
+    <div style="font-weight:600;">{{ proyecto.beneficiario or '—' }}</div>
+    <div class="text-sm text-muted">{{ proyecto.tipo_beneficiario or 'universidad' }}</div>
+  </div>
+  <div class="card card-body">
+    <div class="section-title mb-1">Adoptante</div>
+    <div style="font-weight:600;">{{ proyecto.adoptante or '—' }}</div>
+    <div class="text-sm text-muted">{{ proyecto.tipo_adoptante or 'empresa' }}</div>
+  </div>
+  <div class="card card-body">
+    <div class="section-title mb-1">ANR</div>
+    <div class="anr-value" data-value="{{ proyecto.anr_monto or 0 }}" style="font-family:'Sora',sans-serif;font-size:22px;font-weight:700;color:var(--blue);">—</div>
+    <div class="text-sm text-muted">Aporte No Reembolsable</div>
+  </div>
+  {% if proyecto.programa_codigo == 'FITBA' %}
+  <div class="card card-body" style="border-left:3px solid {{ _ecolor }};">
+    <div class="section-title mb-1">Estado de ejecución</div>
+    <div style="display:flex;align-items:center;gap:6px;font-weight:700;font-size:16px;color:{{ _ecolor }};">
+      <span class="material-icons-round" style="font-size:20px;">{{ _eicons.get(proyecto.estado or '', 'help_outline') }}</span>
+      {{ _elabels.get(proyecto.estado or '', proyecto.estado or '—') }}
+    </div>
+    <div class="text-sm text-muted" style="margin-top:3px;">Excel · estado de ejecución</div>
+  </div>
+  {% endif %}
+</div>
+
+<div class="grid-2">
+  <!-- Left: Hitos -->
+  <div class="tabs-container">
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="hitos">Hitos de avance</button>
+      <button class="tab-btn" data-tab="info">Datos del proyecto</button>
+    </div>
+
+    <div class="tab-content active" data-tab-content="hitos">
+      {% if proyecto.programa_codigo == 'FITBA' %}
+      <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:12px;display:flex;gap:10px;align-items:flex-start;">
+        <span class="material-icons-round" style="font-size:16px;color:var(--text-muted);flex-shrink:0;margin-top:1px;">info</span>
+        <p class="text-sm text-muted" style="margin:0;line-height:1.5;">El <strong>estado oficial</strong> del proyecto es el registrado en la tarjeta <em>Estado de ejecución</em>, sincronizado desde el Excel de seguimiento. El seguimiento por hitos es complementario y está en desarrollo.</p>
+      </div>
+      {% endif %}
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Seguimiento de hitos</span>
+          {% if can_edit() %}
+          <span class="text-sm text-muted">Hacé click en un hito para actualizar</span>
+          {% endif %}
+        </div>
+        <div class="card-body" style="padding:16px 20px;">
+          {% if tiene_etapas %}
+            {# Agrupar por etapa para FITBA 2024+ #}
+            {% set etapas_vistas = [] %}
+            {% set contador_global = namespace(val=0) %}
+            {% for h in hitos_avances %}
+              {% if h.etapa not in etapas_vistas %}
+                {% if etapas_vistas.append(h.etapa) %}{% endif %}
+                <div style="display:flex;align-items:center;gap:8px;margin:{% if loop.index > 1 %}20px{% else %}0{% endif %} 0 10px;">
+                  <span class="material-icons-round" style="font-size:15px;color:{{ proyecto.programa_color }};">flag</span>
+                  <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:{{ proyecto.programa_color }};">{{ h.etapa }}</span>
+                  <div style="flex:1;height:1px;background:{{ proyecto.programa_color }}33;"></div>
+                  {% set comp_etapa = hitos_avances | selectattr('etapa', 'eq', h.etapa) | selectattr('avance_estado', 'eq', 'completado') | list | length %}
+                  {% set tot_etapa  = hitos_avances | selectattr('etapa', 'eq', h.etapa) | list | length %}
+                  <span class="text-sm text-muted">{{ comp_etapa }}/{{ tot_etapa }}</span>
+                </div>
+              {% endif %}
+              {% set contador_global.val = contador_global.val + 1 %}
+              {% set idx = contador_global.val %}
+              <div class="hito-item">
+                <div class="hito-dot {{ h.avance_estado or 'pendiente' }}">
+                  <span class="material-icons-round" style="font-size:13px;">
+                    {% if h.avance_estado == 'completado' %}check
+                    {% elif h.avance_estado == 'en_proceso' %}hourglass_empty
+                    {% elif h.avance_estado == 'con_retraso' %}warning
+                    {% else %}radio_button_unchecked{% endif %}
+                  </span>
+                </div>
+                <div class="hito-info">
+                  <div class="flex items-center gap-1">
+                    <span class="hito-nombre">{{ idx }}. {{ h.nombre }}</span>
+                    <span class="badge badge-{{ h.avance_estado or 'pendiente' }}">{{ (h.avance_estado or 'pendiente')|replace('_',' ') }}</span>
+                  </div>
+                  {% if h.fecha_prevista or h.fecha_real %}
+                  <div class="hito-meta">
+                    {% if h.fecha_prevista %}Previsto: {{ h.fecha_prevista }}{% endif %}
+                    {% if h.fecha_real %} · Real: {{ h.fecha_real }}{% endif %}
+                    {% if h.porcentaje and h.porcentaje > 0 %} · {{ h.porcentaje }}%{% endif %}
+                  </div>
+                  {% endif %}
+                  {% if h.observaciones %}
+                  <div class="text-sm text-muted mt-1">{{ h.observaciones }}</div>
+                  {% endif %}
+                  {% if can_edit() %}
+                  <form method="post" action="{{ url_for('proyectos.actualizar_hito', pid=proyecto.id, hid=h.id) }}" id="hito-form-{{ h.id }}" class="hito-form-inline">
+                    <div class="hito-form-row">
+                      <div class="form-group">
+                        <label class="form-label">Estado</label>
+                        <select name="estado" class="form-control">
+                          <option value="pendiente" {% if (h.avance_estado or 'pendiente') == 'pendiente' %}selected{% endif %}>Pendiente</option>
+                          <option value="en_proceso" {% if h.avance_estado == 'en_proceso' %}selected{% endif %}>En proceso</option>
+                          <option value="completado" {% if h.avance_estado == 'completado' %}selected{% endif %}>Completado</option>
+                          <option value="con_retraso" {% if h.avance_estado == 'con_retraso' %}selected{% endif %}>Con retraso</option>
+                        </select>
+                      </div>
+                      <div class="form-group">
+                        <label class="form-label">Fecha prevista</label>
+                        <input type="date" name="fecha_prevista" class="form-control" value="{{ h.fecha_prevista or '' }}">
+                      </div>
+                      <div class="form-group">
+                        <label class="form-label">Fecha real</label>
+                        <input type="date" name="fecha_real" class="form-control" value="{{ h.fecha_real or '' }}">
+                      </div>
+                    </div>
+                    <div class="form-group mt-1">
+                      <label class="form-label">Observaciones</label>
+                      <textarea name="observaciones" class="form-control" rows="2" placeholder="Notas sobre este hito…">{{ h.observaciones or '' }}</textarea>
+                    </div>
+                    <div class="flex gap-1 mt-1">
+                      <button type="submit" class="btn btn-primary btn-sm"><span class="material-icons-round">save</span> Guardar</button>
+                      <button type="button" onclick="toggleHitoForm({{ h.id }})" class="btn btn-secondary btn-sm">Cancelar</button>
+                    </div>
+                  </form>
+                  {% endif %}
+                </div>
+                {% if can_edit() %}
+                <div class="hito-actions">
+                  <button onclick="toggleHitoForm({{ h.id }})" class="btn btn-secondary btn-sm btn-icon" title="Editar hito">
+                    <span class="material-icons-round">edit_note</span>
+                  </button>
+                </div>
+                {% endif %}
+              </div>
+            {% endfor %}
+          {% else %}
+            {# Lista plana para el resto de programas #}
+            <div class="hitos-list">
+              {% for h in hitos_avances %}
+              <div class="hito-item">
+                <div class="hito-dot {{ h.avance_estado or 'pendiente' }}">
+                  <span class="material-icons-round" style="font-size:13px;">
+                    {% if h.avance_estado == 'completado' %}check
+                    {% elif h.avance_estado == 'en_proceso' %}hourglass_empty
+                    {% elif h.avance_estado == 'con_retraso' %}warning
+                    {% else %}radio_button_unchecked{% endif %}
+                  </span>
+                </div>
+                <div class="hito-info">
+                  <div class="flex items-center gap-1">
+                    <span class="hito-nombre">{{ loop.index }}. {{ h.nombre }}</span>
+                    <span class="badge badge-{{ h.avance_estado or 'pendiente' }}">{{ (h.avance_estado or 'pendiente')|replace('_',' ') }}</span>
+                  </div>
+                  {% if h.fecha_prevista or h.fecha_real %}
+                  <div class="hito-meta">
+                    {% if h.fecha_prevista %}Previsto: {{ h.fecha_prevista }}{% endif %}
+                    {% if h.fecha_real %} · Real: {{ h.fecha_real }}{% endif %}
+                    {% if h.porcentaje and h.porcentaje > 0 %} · {{ h.porcentaje }}%{% endif %}
+                  </div>
+                  {% endif %}
+                  {% if h.observaciones %}
+                  <div class="text-sm text-muted mt-1">{{ h.observaciones }}</div>
+                  {% endif %}
+                  {% if can_edit() %}
+                  <form method="post" action="{{ url_for('proyectos.actualizar_hito', pid=proyecto.id, hid=h.id) }}" id="hito-form-{{ h.id }}" class="hito-form-inline">
+                    <div class="hito-form-row">
+                      <div class="form-group">
+                        <label class="form-label">Estado</label>
+                        <select name="estado" class="form-control">
+                          <option value="pendiente" {% if (h.avance_estado or 'pendiente') == 'pendiente' %}selected{% endif %}>Pendiente</option>
+                          <option value="en_proceso" {% if h.avance_estado == 'en_proceso' %}selected{% endif %}>En proceso</option>
+                          <option value="completado" {% if h.avance_estado == 'completado' %}selected{% endif %}>Completado</option>
+                          <option value="con_retraso" {% if h.avance_estado == 'con_retraso' %}selected{% endif %}>Con retraso</option>
+                        </select>
+                      </div>
+                      <div class="form-group">
+                        <label class="form-label">Fecha prevista</label>
+                        <input type="date" name="fecha_prevista" class="form-control" value="{{ h.fecha_prevista or '' }}">
+                      </div>
+                      <div class="form-group">
+                        <label class="form-label">Fecha real</label>
+                        <input type="date" name="fecha_real" class="form-control" value="{{ h.fecha_real or '' }}">
+                      </div>
+                    </div>
+                    <div class="form-group mt-1">
+                      <label class="form-label">Observaciones</label>
+                      <textarea name="observaciones" class="form-control" rows="2" placeholder="Notas sobre este hito…">{{ h.observaciones or '' }}</textarea>
+                    </div>
+                    <div class="flex gap-1 mt-1">
+                      <button type="submit" class="btn btn-primary btn-sm"><span class="material-icons-round">save</span> Guardar</button>
+                      <button type="button" onclick="toggleHitoForm({{ h.id }})" class="btn btn-secondary btn-sm">Cancelar</button>
+                    </div>
+                  </form>
+                  {% endif %}
+                </div>
+                {% if can_edit() %}
+                <div class="hito-actions">
+                  <button onclick="toggleHitoForm({{ h.id }})" class="btn btn-secondary btn-sm btn-icon" title="Editar hito">
+                    <span class="material-icons-round">edit_note</span>
+                  </button>
+                </div>
+                {% endif %}
+              </div>
+              {% endfor %}
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-content" data-tab-content="info">
+      <div class="card card-body">
+        <div class="section-title">Información general</div>
+        <table style="width:100%;border-collapse:collapse;">
+          <tr><td class="text-muted text-sm" style="padding:7px 0;width:40%;border-bottom:1px solid var(--border);">Programa</td><td style="border-bottom:1px solid var(--border);"><span class="tag">{{ proyecto.programa_codigo }}</span></td></tr>
+          <tr><td class="text-muted text-sm" style="padding:7px 0;border-bottom:1px solid var(--border);">Código/Expediente</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.codigo or '—' }}</td></tr>
+          <tr><td class="text-muted text-sm" style="padding:7px 0;border-bottom:1px solid var(--border);">Área temática</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.area_tematica or '—' }}</td></tr>
+          <tr><td class="text-muted text-sm" style="padding:7px 0;border-bottom:1px solid var(--border);">Inicio previsto</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.fecha_inicio or '—' }}</td></tr>
+          <tr><td class="text-muted text-sm" style="padding:7px 0;border-bottom:1px solid var(--border);">Fin previsto</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.fecha_fin_prevista or '—' }}</td></tr>
+          <tr><td class="text-muted text-sm" style="padding:7px 0;border-bottom:1px solid var(--border);">Fin real</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.fecha_fin_real or '—' }}</td></tr>
+          <tr><td class="text-muted text-sm" style="padding:7px 0;">Agente responsable</td><td>{{ (proyecto.agente_nombre or '') + ' ' + (proyecto.agente_apellido or '') or '—' }}</td></tr>
+        </table>
+        {% if proyecto.descripcion %}
+        <div class="section-title mt-2">Descripción</div>
+        <p class="text-sm" style="line-height:1.7;">{{ proyecto.descripcion }}</p>
+        {% endif %}
+        {% if proyecto.contacto_nombre or proyecto.contacto_email %}
+        <div class="section-title mt-2">Contacto</div>
+        <p class="text-sm">{{ proyecto.contacto_nombre or '' }}</p>
+        <p class="text-sm text-muted">{{ proyecto.contacto_email or '' }}{% if proyecto.contacto_telefono %} · {{ proyecto.contacto_telefono }}{% endif %}</p>
+        {% endif %}
+
+        {% if proyecto.linea or proyecto.anio or proyecto.director %}
+        <div class="section-title mt-2">Datos FITBA</div>
+        <table style="width:100%;border-collapse:collapse;">
+          {% if proyecto.linea %}<tr><td class="text-muted text-sm" style="padding:6px 0;width:40%;border-bottom:1px solid var(--border);">Línea</td><td style="border-bottom:1px solid var(--border);"><strong>Línea {{ proyecto.linea }}</strong></td></tr>{% endif %}
+          {% if proyecto.anio %}<tr><td class="text-muted text-sm" style="padding:6px 0;border-bottom:1px solid var(--border);">Año convocatoria</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.anio }}</td></tr>{% endif %}
+          {% if proyecto.director %}<tr><td class="text-muted text-sm" style="padding:6px 0;border-bottom:1px solid var(--border);">Director/a</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.director }}</td></tr>{% endif %}
+          {% if proyecto.uvt %}<tr><td class="text-muted text-sm" style="padding:6px 0;border-bottom:1px solid var(--border);">UVT</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.uvt }}</td></tr>{% endif %}
+          {% if proyecto.ib2 %}<tr><td class="text-muted text-sm" style="padding:6px 0;border-bottom:1px solid var(--border);">IB secundario</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.ib2 }}</td></tr>{% endif %}
+          {% if proyecto.n_investigadores %}<tr><td class="text-muted text-sm" style="padding:6px 0;border-bottom:1px solid var(--border);">Investigadores</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.n_investigadores }} ({{ proyecto.n_mujeres or 0 }} mujeres)</td></tr>{% endif %}
+          {% if proyecto.sector_actividad_1 %}<tr><td class="text-muted text-sm" style="padding:6px 0;border-bottom:1px solid var(--border);">Sector adoptante</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.sector_actividad_1 }}{% if proyecto.sector_actividad_2 %}, {{ proyecto.sector_actividad_2 }}{% endif %}</td></tr>{% endif %}
+          {% if proyecto.sector_tema %}<tr><td class="text-muted text-sm" style="padding:6px 0;border-bottom:1px solid var(--border);">Sector temático</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.sector_tema }}</td></tr>{% endif %}
+          {% if proyecto.anr_actualizado %}<tr><td class="text-muted text-sm" style="padding:6px 0;border-bottom:1px solid var(--border);">ANR actualizado</td><td style="border-bottom:1px solid var(--border);font-weight:600;">${{ "{:,.0f}".format(proyecto.anr_actualizado) }}</td></tr>{% endif %}
+          {% if proyecto.seccion %}<tr><td class="text-muted text-sm" style="padding:6px 0;">Sección electoral</td><td>{{ proyecto.seccion }}</td></tr>{% endif %}
+        </table>
+        {% endif %}
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: Novedades -->
+  <div>
+    {% if can_edit() %}
+    <div class="card mb-2">
+      <div class="card-header"><span class="card-title">Registrar novedad</span></div>
+      <form method="post" action="{{ url_for('proyectos.agregar_novedad', pid=proyecto.id) }}" class="card-body">
+        <div class="form-group mb-2">
+          <label class="form-label">Título</label>
+          <input name="titulo" class="form-control" placeholder="Resumen de la novedad…" required>
+        </div>
+        <div class="form-grid mb-2">
+          <div class="form-group">
+            <label class="form-label">Tipo</label>
+            <select name="tipo" class="form-control">
+              <option value="novedad">Novedad</option>
+              <option value="logro">Logro</option>
+              <option value="problema">Problema</option>
+              <option value="hito_alcanzado">Hito alcanzado</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Fecha</label>
+            <input type="date" name="fecha" class="form-control" value="{{ today }}">
+          </div>
+        </div>
+        <div class="form-group mb-2">
+          <label class="form-label">Descripción (opcional)</label>
+          <textarea name="descripcion" class="form-control" rows="2" placeholder="Detalle adicional…"></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm">
+          <span class="material-icons-round">add_comment</span> Registrar
+        </button>
+      </form>
+    </div>
+    {% endif %}
+
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Historial de novedades</span>
+        <span class="badge badge-activo">{{ novedades|length }}</span>
+      </div>
+      <div class="card-body" style="padding:14px 20px;">
+        {% if novedades %}
+        <div class="feed">
+          {% for nov in novedades %}
+          <div class="feed-item">
+            <div class="feed-dot {{ nov.tipo }}"></div>
+            <div>
+              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                <span class="feed-title">{{ nov.titulo }}</span>
+                <span class="badge badge-{{ nov.tipo }}">{{ nov.tipo|replace('_',' ') }}</span>
+              </div>
+              {% if nov.descripcion %}<p class="text-sm" style="margin-top:4px;color:var(--text-mid);">{{ nov.descripcion }}</p>{% endif %}
+              <div class="feed-meta">{{ nov.fecha or '' }} · {{ (nov.autor_nombre or '') + ' ' + (nov.autor_apellido or '') }}</div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-muted text-sm" style="padding:12px 0;">Sin novedades registradas.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Pre-set today's date
+document.querySelectorAll('input[name="fecha"]').forEach(i => {
+  if (!i.value) i.value = new Date().toISOString().split('T')[0];
+});
+</script>
+{% endblock %}

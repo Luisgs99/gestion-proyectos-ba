@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Usuarios{% endblock %}
+{% block breadcrumb %}Administración / Usuarios{% endblock %}
+
+{% block topbar_actions %}
+  <a href="{{ url_for('admin.usuario_nuevo') }}" class="btn btn-primary btn-sm">
+    <span class="material-icons-round">person_add</span> Nuevo usuario
+  </a>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div class="page-header-left">
+    <h1>Gestión de usuarios</h1>
+    <p>{{ users|length }} usuarios registrados en el sistema.</p>
+  </div>
+</div>
+
+<div class="card">
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Usuario</th>
+          <th>Email</th>
+          <th>Rol</th>
+          <th>Estado</th>
+          <th>Alta</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+        <tr>
+          <td>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <div style="width:34px;height:34px;border-radius:50%;background:var(--blue);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:13px;flex-shrink:0;">{{ u.nombre[0] }}</div>
+              <div>
+                <div style="font-weight:600;">{{ u.nombre }} {{ u.apellido }}</div>
+              </div>
+            </div>
+          </td>
+          <td class="text-sm">{{ u.email }}</td>
+          <td><span class="badge badge-{{ u.rol }}">{{ u.rol }}</span></td>
+          <td>{% if u.activo %}<span class="badge badge-activo">Activo</span>{% else %}<span class="badge badge-suspendido">Inactivo</span>{% endif %}</td>
+          <td class="text-sm text-muted">{{ u.created_at[:10] if u.created_at else '—' }}</td>
+          <td>
+            <div class="flex gap-1">
+              <a href="{{ url_for('admin.usuario_editar', uid=u.id) }}" class="btn btn-secondary btn-sm btn-icon" title="Editar">
+                <span class="material-icons-round">edit</span>
+              </a>
+              {% if u.id != session.user_id %}
+              <form id="del-u-{{ u.id }}" method="post" action="{{ url_for('admin.usuario_eliminar', uid=u.id) }}" style="display:inline;">
+                <button type="button" class="btn btn-danger btn-sm btn-icon" onclick="confirmDelete('¿Eliminar al usuario {{ u.nombre }} {{ u.apellido }}?','del-u-{{ u.id }}')">
+                  <span class="material-icons-round">delete</span>
+                </button>
+              </form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card mt-3">
+  <div class="card-header"><span class="card-title">Roles del sistema</span></div>
+  <div class="card-body">
+    <div class="grid-3">
+      <div style="padding:14px;background:var(--gold-light);border-radius:8px;border:1px solid #FFE082;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span class="badge badge-admin">admin</span><strong>Administrador</strong></div>
+        <p class="text-sm">Acceso completo: ver, crear, editar, eliminar proyectos. Gestión de usuarios y configuración del sistema.</p>
+      </div>
+      <div style="padding:14px;background:var(--blue-pale);border-radius:8px;border:1px solid #BBDEFB;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span class="badge badge-visualizador">visualizador</span><strong>Visualizador</strong></div>
+        <p class="text-sm">Acceso de lectura a todos los módulos. Puede ver todos los proyectos y estadísticas pero no puede editar.</p>
+      </div>
+      <div style="padding:14px;background:var(--green-pale);border-radius:8px;border:1px solid #B2DFDB;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span class="badge badge-agente">agente</span><strong>Agente</strong></div>
+        <p class="text-sm">Puede ver y cargar información sobre sus proyectos asignados. Puede ver (solo lectura) el resto de los proyectos.</p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

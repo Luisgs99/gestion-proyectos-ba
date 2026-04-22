@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% block title %}{% if proyecto %}Editar proyecto{% else %}Nuevo proyecto{% endif %}{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('proyectos.list') }}" style="color:var(--text-muted);text-decoration:none;">Proyectos</a>
+  / {% if proyecto %}{{ proyecto.nombre }}{% else %}Nuevo proyecto{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div class="page-header-left">
+    <h1>{% if proyecto %}Editar proyecto{% else %}Nuevo proyecto{% endif %}</h1>
+    <p>{% if proyecto %}Modificar los datos del proyecto.{% else %}Completar los datos para registrar un nuevo proyecto.{% endif %}</p>
+  </div>
+</div>
+
+<form method="post">
+<div class="grid-2" style="align-items:start;">
+
+  <!-- Col 1 -->
+  <div style="display:flex;flex-direction:column;gap:16px;">
+    <div class="card card-body">
+      <div class="section-title">Información básica</div>
+      <div class="form-group mb-2">
+        <label class="form-label">Programa *</label>
+        <select name="programa_id" class="form-control" required>
+          <option value="">Seleccioná un programa</option>
+          {% for p in programas %}
+          <option value="{{ p.id }}" {% if proyecto and proyecto.programa_id == p.id %}selected{% elif request.args.get('programa') == p.id|string %}selected{% endif %}>
+            {{ p.codigo }} — {{ p.nombre }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group mb-2">
+        <label class="form-label">Nombre del proyecto *</label>
+        <input name="nombre" class="form-control" required placeholder="Nombre descriptivo del proyecto" value="{{ proyecto.nombre if proyecto else '' }}">
+      </div>
+      <div class="form-grid mb-2">
+        <div class="form-group">
+          <label class="form-label">Código / Expediente</label>
+          <input name="codigo" class="form-control" placeholder="Ej: EXP-001" value="{{ proyecto.codigo if proyecto else '' }}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Área temática</label>
+          <input name="area_tematica" class="form-control" placeholder="Ej: IA, Agro, Salud…" value="{{ proyecto.area_tematica if proyecto else '' }}">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Descripción</label>
+        <textarea name="descripcion" class="form-control" rows="3" placeholder="Descripción del proyecto…">{{ proyecto.descripcion if proyecto else '' }}</textarea>
+      </div>
+    </div>
+
+    <div class="card card-body">
+      <div class="section-title">Beneficiario</div>
+      <div class="form-group mb-2">
+        <label class="form-label">Institución beneficiaria</label>
+        <input name="beneficiario" class="form-control" placeholder="Universidad o institución científica" value="{{ proyecto.beneficiario if proyecto else '' }}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Tipo de beneficiario</label>
+        <select name="tipo_beneficiario" class="form-control">
+          <option value="universidad" {% if proyecto and proyecto.tipo_beneficiario == 'universidad' %}selected{% endif %}>Universidad</option>
+          <option value="instituto_cientifico" {% if proyecto and proyecto.tipo_beneficiario == 'instituto_cientifico' %}selected{% endif %}>Instituto científico</option>
+          <option value="organismo_publico" {% if proyecto and proyecto.tipo_beneficiario == 'organismo_publico' %}selected{% endif %}>Organismo público</option>
+          <option value="otro" {% if proyecto and proyecto.tipo_beneficiario == 'otro' %}selected{% endif %}>Otro</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="card card-body">
+      <div class="section-title">Adoptante</div>
+      <div class="form-group mb-2">
+        <label class="form-label">Empresa u organismo adoptante</label>
+        <input name="adoptante" class="form-control" placeholder="Empresa u organismo que adopta la tecnología" value="{{ proyecto.adoptante if proyecto else '' }}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Tipo de adoptante</label>
+        <select name="tipo_adoptante" class="form-control">
+          <option value="empresa" {% if proyecto and proyecto.tipo_adoptante == 'empresa' %}selected{% endif %}>Empresa privada</option>
+          <option value="organismo_publico" {% if proyecto and proyecto.tipo_adoptante == 'organismo_publico' %}selected{% endif %}>Organismo público</option>
+          <option value="municipio" {% if proyecto and proyecto.tipo_adoptante == 'municipio' %}selected{% endif %}>Municipio</option>
+          <option value="otro" {% if proyecto and proyecto.tipo_adoptante == 'otro' %}selected{% endif %}>Otro</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Col 2 -->
+  <div style="display:flex;flex-direction:column;gap:16px;">
+    <div class="card card-body">
+      <div class="section-title">Financiamiento y estado</div>
+      <div class="form-group mb-2">
+        <label class="form-label">ANR — Monto ($)</label>
+        <input type="number" name="anr_monto" class="form-control" step="1000" min="0" placeholder="0" value="{{ proyecto.anr_monto if proyecto else '' }}">
+      </div>
+      <div class="form-group mb-2">
+        <label class="form-label">Estado del proyecto</label>
+        <select name="estado" class="form-control">
+          <option value="activo" {% if not proyecto or proyecto.estado == 'activo' %}selected{% endif %}>Activo</option>
+          <option value="en_evaluacion" {% if proyecto and proyecto.estado == 'en_evaluacion' %}selected{% endif %}>En evaluación</option>
+          <option value="finalizado" {% if proyecto and proyecto.estado == 'finalizado' %}selected{% endif %}>Finalizado</option>
+          <option value="suspendido" {% if proyecto and proyecto.estado == 'suspendido' %}selected{% endif %}>Suspendido</option>
+        </select>
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Fecha de inicio</label>
+          <input type="date" name="fecha_inicio" class="form-control" value="{{ proyecto.fecha_inicio if proyecto else '' }}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Fin previsto</label>
+          <input type="date" name="fecha_fin_prevista" class="form-control" value="{{ proyecto.fecha_fin_prevista if proyecto else '' }}">
+        </div>
+        {% if proyecto %}
+        <div class="form-group">
+          <label class="form-label">Fin real</label>
+          <input type="date" name="fecha_fin_real" class="form-control" value="{{ proyecto.fecha_fin_real if proyecto else '' }}">
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="card card-body">
+      <div class="section-title">Localización</div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Municipio</label>
+          <input name="municipio" class="form-control" placeholder="Ej: La Plata" value="{{ proyecto.municipio if proyecto else '' }}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Localidad</label>
+          <input name="localidad" class="form-control" placeholder="Ej: City Bell" value="{{ proyecto.localidad if proyecto else '' }}">
+        </div>
+      </div>
+    </div>
+
+    <div class="card card-body">
+      <div class="section-title">Agente responsable</div>
+      <div class="form-group">
+        <label class="form-label">Agente asignado</label>
+        <select name="agente_id" class="form-control">
+          <option value="">Sin asignar</option>
+          {% for a in agentes %}
+          <option value="{{ a.id }}" {% if proyecto and proyecto.agente_id == a.id %}selected{% endif %}>{{ a.apellido }}, {{ a.nombre }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <div class="card card-body">
+      <div class="section-title">Contacto del proyecto</div>
+      <div class="form-group mb-2">
+        <label class="form-label">Nombre contacto</label>
+        <input name="contacto_nombre" class="form-control" placeholder="Nombre y apellido" value="{{ proyecto.contacto_nombre if proyecto else '' }}">
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Email</label>
+          <input type="email" name="contacto_email" class="form-control" placeholder="email@org.com" value="{{ proyecto.contacto_email if proyecto else '' }}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Teléfono</label>
+          <input name="contacto_telefono" class="form-control" placeholder="+54 221…" value="{{ proyecto.contacto_telefono if proyecto else '' }}">
+        </div>
+      </div>
+    </div>
+
+    <div class="flex gap-2" style="justify-content:flex-end;">
+      <a href="{{ url_for('proyectos.list') }}" class="btn btn-secondary">Cancelar</a>
+      <button type="submit" class="btn btn-primary">
+        <span class="material-icons-round">save</span>
+        {% if proyecto %}Guardar cambios{% else %}Crear proyecto{% endif %}
+      </button>
+    </div>
+  </div>
+</div>
+</form>
+{% endblock %}

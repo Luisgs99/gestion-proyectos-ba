@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"from app import app; print\\('OK - app importada correctamente'\\)\")",
+      "Bash(python -c ':*)",
+      "Bash(python -c \"from app import app; print\\('OK —', len\\(app.url_map._rules\\), 'rutas registradas'\\)\")",
+      "Bash(python -c \"from app import app; rules = [str\\(r\\) for r in app.url_map._rules if 'reporte' in str\\(r\\) or 'api/r' in str\\(r\\)]; [print\\(r\\) for r in sorted\\(rules\\)]\")",
+      "Bash(python -c \"from app import app; print\\('OK —', len\\(app.url_map._rules\\), 'rutas'\\)\")",
+      "Bash(python -c \"from database import init_db; init_db\\(\\)\")",
+      "Bash(python -c \"from blueprints.instituciones import bp; print\\('OK:', bp.name\\)\")",
+      "Bash(grep -v \"^$\")",
+      "Bash(python -c \"from blueprints.sync import _fetch_csv, _norm; print\\('OK'\\)\")",
+      "Bash(python3 -c ':*)",
+      "Bash(python -c \"import urllib.request, json; url='https://apis.datos.gob.ar/georef/api/municipios?provincia=06&formato=geojson&max=200&campos=id,nombre,geometria'; r=urllib.request.urlopen\\(url,timeout=15\\); data=r.read\\(\\); parsed=json.loads\\(data\\); print\\('features:', len\\(parsed.get\\('features',[]\\)\\), '| first props:', list\\(parsed['features'][0]['properties'].keys\\(\\)\\) if parsed.get\\('features'\\) else 'none'\\)\")",
+      "Bash(python *)",
+      "WebFetch(domain:docs.google.com)",
+      "WebFetch(domain:doc-14-10-sheets.googleusercontent.com)",
+      "Bash(sqlite3 proyectos_ba.db \"SELECT id FROM programas WHERE codigo='CLINICA';\")",
+      "Bash(py -c ' *)"
+    ]
+  }
+}

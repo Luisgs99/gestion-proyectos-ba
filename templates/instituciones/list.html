@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% block title %}Instituciones{% endblock %}
+{% block breadcrumb %}Instituciones{% endblock %}
+
+{% block topbar_actions %}
+  {% if can_edit() %}
+  <a href="{{ url_for('instituciones.nueva') }}" class="btn btn-primary btn-sm">
+    <span class="material-icons-round">add</span> Nueva
+  </a>
+  <button onclick="document.getElementById('modal-import').style.display='flex'" class="btn btn-secondary btn-sm">
+    <span class="material-icons-round">upload_file</span> Importar Excel
+  </button>
+  <form method="post" action="{{ url_for('instituciones.sync_fitba') }}" style="display:inline;"
+        onsubmit="return confirm('Esto va a crear una entrada por cada institución beneficiaria de FITBA que todavía no esté registrada. ¿Continuar?')">
+    <button type="submit" class="btn btn-secondary btn-sm">
+      <span class="material-icons-round">sync</span> Sync FITBA
+    </button>
+  </form>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+<!-- Filtros -->
+<form method="get" class="card card-body mb-3" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+  <div style="flex:1;min-width:180px;">
+    <label class="form-label">Buscar</label>
+    <input type="text" name="q" value="{{ q }}" class="form-control" placeholder="Nombre o sigla…">
+  </div>
+  <div>
+    <label class="form-label">Tipo</label>
+    <select name="tipo" class="form-control">
+      <option value="">Todos</option>
+      {% for t in tipos %}<option value="{{ t }}" {% if tipo==t %}selected{% endif %}>{{ t|capitalize }}</option>{% endfor %}
+    </select>
+  </div>
+  <div>
+    <label class="form-label">Estado del vínculo</label>
+    <select name="estado" class="form-control">
+      <option value="">Todos</option>
+      {% for e in estados %}<option value="{{ e }}" {% if estado==e %}selected{% endif %}>{{ e|replace('_',' ')|capitalize }}</option>{% endfor %}
+    </select>
+  </div>
+  <div>
+    <button type="submit" class="btn btn-primary">Filtrar</button>
+    {% if q or tipo or estado %}<a href="{{ url_for('instituciones.list') }}" class="btn btn-secondary">Limpiar</a>{% endif %}
+  </div>
+</form>
+
+<!-- Resumen rápido -->
+<div class="grid-4 mb-3">
+  <div class="card card-body" style="text-align:center;">
+    <div style="font-size:28px;font-weight:700;color:var(--blue);">{{ instituciones|length }}</div>
+    <div class="text-sm text-muted">Total</div>
+  </div>
+  <div class="card card-body" style="text-align:center;">
+    <div style="font-size:28px;font-weight:700;color:var(--green);">{{ instituciones|selectattr('estado_vinculo','eq','activo')|list|length }}</div>
+    <div class="text-sm text-muted">Vínculo activo</div>
+  </div>
+  <div class="card card-body" style="text-align:center;">
+    <div style="font-size:28px;font-weight:700;color:var(--orange);">{{ instituciones|selectattr('estado_vinculo','eq','en_gestion')|list|length }}</div>
+    <div class="text-sm text-muted">En gestión</div>
+  </div>
+  <div class="card card-body" style="text-align:center;">
+    <div style="font-size:28px;font-weight:700;color:var(--text-muted);">{{ instituciones|selectattr('estado_vinculo','eq','inactivo')|list|length }}</div>
+    <div class="text-sm text-muted">Inactivas</div>
+  </div>
+</div>
+
+<!-- Tabla -->
+<div class="card">
+  <div class="card-header">
+    <span>Instituciones ({{ instituciones|length }})</span>
+  </div>
+  {% if instituciones %}
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Institución</th>
+        <th>Tipo</th>
+        <th>Municipio</th>
+        <th>Vínculo</th>
+        <th style="text-align:center;">Contactos</th>
+        <th style="text-align:center;">Docs</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for i in instituciones %}
+      <tr>
+        <td>
+          <a href="{{ url_for('instituciones.detail', iid=i.id) }}" style="font-weight:600;color:var(--blue);text-decoration:none;">
+            {{ i.nombre }}
+          </a>
+          {% if i.nombre_corto %}<span class="badge" style="font-size:10px;margin-left:4px;background:var(--bg-hover);">{{ i.nombre_corto }}</span>{% endif %}
+        </td>
+        <td><span class="badge badge-outline" style="font-size:11px;">{{ i.tipo }}</span></td>
+        <td class="text-sm">{{ i.municipio or '—' }}</td>
+        <td>
+          <span class="badge badge-{{ i.estado_vinculo }}" style="font-size:11px;">{{ i.estado_vinculo|replace('_',' ') }}</span>
+        </td>
+        <td style="text-align:center;font-size:13px;">{{ i.n_contactos }}</td>
+        <td style="text-align:center;font-size:13px;">{{ i.n_documentos }}</td>
+        <td>
+          <a href="{{ url_for('instituciones.detail', iid=i.id) }}" class="btn btn-secondary btn-sm">Ver</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="card-body" style="text-align:center;padding:40px;color:var(--text-muted);">
+    <span class="material-icons-round" style="font-size:48px;display:block;margin-bottom:8px;">account_balance</span>
+    No hay instituciones registradas.
+    {% if can_edit() %}
+    Podés <a href="{{ url_for('instituciones.nueva') }}">crear una manualmente</a> o usar <strong>Sync FITBA</strong> para importarlas desde los proyectos.
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+
+<!-- Modal importar Excel -->
+<div id="modal-import" class="modal-overlay" style="display:none;" onclick="if(event.target===this)this.style.display='none'">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h3>Importar instituciones desde Excel</h3>
+      <button onclick="document.getElementById('modal-import').style.display='none'" class="modal-close">
+        <span class="material-icons-round">close</span>
+      </button>
+    </div>
+    <div class="modal-body">
+      <p class="text-sm text-muted mb-2">
+        El Excel debe tener al menos la columna <code>nombre</code>. Columnas opcionales:
+        <code>nombre_corto</code>, <code>tipo</code>, <code>cuit</code>, <code>municipio</code>,
+        <code>localidad</code>, <code>provincia</code>, <code>website</code>, <code>descripcion</code>,
+        <code>estado_vinculo</code>, <code>notas_vinculo</code>.
+      </p>
+      <form method="post" action="{{ url_for('instituciones.importar') }}" enctype="multipart/form-data">
+        <div class="mb-2">
+          <label class="form-label">Archivo Excel (.xlsx)</label>
+          <input type="file" name="archivo" accept=".xlsx,.xls" class="form-control" required>
+        </div>
+        <button type="submit" class="btn btn-primary">Importar</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

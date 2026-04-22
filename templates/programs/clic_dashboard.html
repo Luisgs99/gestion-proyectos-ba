@@ -1,0 +1,496 @@
+{% extends "base.html" %}
+{% block title %}CLIC — Dashboard{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('programas.list') }}" style="color:var(--text-muted);text-decoration:none;">Programas</a>
+  / CLIC
+{% endblock %}
+
+{% block topbar_actions %}
+  <div style="display:flex;align-items:center;gap:2px;background:var(--surface-2);border:1.5px solid var(--border);border-radius:8px;padding:3px;">
+    <button id="clic-btn-n"    class="metric-btn metric-btn-active" onclick="clicSetMode('n')">Centros</button>
+    <button id="clic-btn-anr"  class="metric-btn"                   onclick="clicSetMode('anr')">ANR nominal</button>
+    <button id="clic-btn-real" class="metric-btn"                   onclick="clicSetMode('real')">ANR real <span style="font-size:9px;opacity:.7;">{{ ipc_fecha_val }}</span></button>
+  </div>
+  {% if can_edit() %}
+  <a href="{{ url_for('proyectos.nuevo') }}?programa={{ programa.id }}" class="btn btn-primary btn-sm">
+    <span class="material-icons-round">add</span> Nuevo Centro
+  </a>
+  {% endif %}
+  <a href="{{ url_for('reportes.exportar') }}?programa_id={{ programa.id }}" class="btn btn-secondary btn-sm">
+    <span class="material-icons-round">download</span> Exportar Excel
+  </a>
+{% endblock %}
+
+{% block content %}
+
+<!-- Header -->
+<div style="background:linear-gradient(135deg,#00695C 0%,#00897B 55%,#4DB6AC 100%);border-radius:14px;padding:26px 32px;margin-bottom:24px;color:#fff;position:relative;overflow:hidden;">
+  <div style="position:absolute;right:-40px;top:-40px;width:200px;height:200px;border-radius:50%;background:rgba(255,255,255,.06);"></div>
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:20px;flex-wrap:wrap;position:relative;z-index:1;">
+    <div>
+      <div style="font-size:11px;opacity:.6;margin-bottom:6px;letter-spacing:.1em;text-transform:uppercase;font-family:'Encode Sans',sans-serif;">Programa</div>
+      <h1 style="font-family:'Encode Sans',sans-serif;font-size:28px;font-weight:800;margin-bottom:4px;">CLIC</h1>
+      <p style="opacity:.75;font-size:14px;">Centros Locales de Innovación y Cultura</p>
+    </div>
+    <div style="display:flex;gap:24px;text-align:center;flex-wrap:wrap;">
+      <div>
+        <div style="font-family:'Encode Sans',sans-serif;font-size:38px;font-weight:800;line-height:1;">{{ total }}</div>
+        <div style="font-size:12px;opacity:.65;margin-top:2px;">centros</div>
+      </div>
+      <div style="border-left:1px solid rgba(255,255,255,.2);padding-left:24px;">
+        <div style="font-family:'Encode Sans',sans-serif;font-size:38px;font-weight:800;line-height:1;">{{ activos }}</div>
+        <div style="font-size:12px;opacity:.65;margin-top:2px;">activos</div>
+      </div>
+      <div style="border-left:1px solid rgba(255,255,255,.2);padding-left:24px;">
+        <div style="font-family:'Encode Sans',sans-serif;font-size:38px;font-weight:800;line-height:1;">{{ municipios_cubiertos }}</div>
+        <div style="font-size:12px;opacity:.65;margin-top:2px;">municipios</div>
+      </div>
+      <div style="border-left:1px solid rgba(255,255,255,.2);padding-left:24px;">
+        <div id="clic-hdr-val" style="font-family:'Encode Sans',sans-serif;font-size:28px;font-weight:800;line-height:1;">${{ "%.1f"|format(total_anr/1e6) }}M</div>
+        <div id="clic-hdr-label" style="font-size:12px;opacity:.65;margin-top:2px;">ANR comprometido</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- KPI cards -->
+<div class="stat-grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr));margin-bottom:24px;">
+  <div class="stat-card">
+    <div class="stat-icon green"><span class="material-icons-round">lightbulb</span></div>
+    <div><div class="stat-value">{{ activos }}</div><div class="stat-label">Centros activos</div></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon blue"><span class="material-icons-round">check_circle</span></div>
+    <div><div class="stat-value">{{ finalizados }}</div><div class="stat-label">Finalizados</div></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon red"><span class="material-icons-round">pause_circle</span></div>
+    <div><div class="stat-value">{{ suspendidos }}</div><div class="stat-label">Suspendidos</div></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon purple"><span class="material-icons-round">location_city</span></div>
+    <div><div class="stat-value">{{ municipios_cubiertos }}</div><div class="stat-label">Municipios cubiertos</div></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon gold"><span class="material-icons-round">payments</span></div>
+    <div>
+      <div class="stat-value" style="font-size:18px;">
+        <span id="clic-kpi-val">${{ "%.1f"|format(total_anr/1e6) }}M</span>
+      </div>
+      <div id="clic-kpi-label" class="stat-label">ANR comprometido</div>
+    </div>
+  </div>
+</div>
+
+<!-- Tabs -->
+<div class="tabs-container">
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="centros">Centros ({{ total }})</button>
+    <button class="tab-btn" data-tab="estadisticas">Estadísticas</button>
+    <button class="tab-btn" data-tab="hitos">Avance por Hitos</button>
+    <button class="tab-btn" data-tab="novedades">Novedades recientes</button>
+  </div>
+
+  <!-- Centros -->
+  <div class="tab-content active" data-tab-content="centros">
+    {% if proyectos %}
+    <div class="card">
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Centro</th>
+              <th>Municipio</th>
+              <th>Área temática</th>
+              <th>ANR</th>
+              <th>Avance</th>
+              <th>Estado</th>
+              <th>Agente</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in proyectos %}
+            <tr>
+              <td>
+                <div style="font-weight:600;font-size:13.5px;">{{ p.nombre }}</div>
+                {% if p.localidad %}<div class="text-sm text-muted">{{ p.localidad }}</div>{% endif %}
+              </td>
+              <td>{{ p.municipio or '—' }}</td>
+              <td>{{ p.area_tematica or '—' }}</td>
+              <td class="mono text-sm clic-proy-anr"
+                  data-nom="{{ p.anr_monto or 0 }}"
+                  data-real="{{ p.anr_real or 0 }}">
+                {% if p.anr_monto %}${{ "%.1f"|format(p.anr_monto/1e6) }}M{% else %}<span class="text-muted">—</span>{% endif %}
+              </td>
+              <td>
+                <div style="min-width:80px;">
+                  <div class="progress-bar" style="margin-bottom:3px;">
+                    <div class="progress-fill" style="width:{{ p.porcentaje_avance or 0 }}%;background:{{ programa.color }};"></div>
+                  </div>
+                  <div class="text-sm text-muted">{{ p.porcentaje_avance or 0 }}%</div>
+                </div>
+              </td>
+              <td><span class="badge badge-{{ p.estado }}">{{ p.estado|replace('_',' ') }}</span></td>
+              <td class="text-muted text-sm">{{ (p.agente_nombre or '') + ' ' + (p.agente_apellido or '') }}</td>
+              <td>
+                <a href="{{ url_for('proyectos.detail', pid=p.id) }}" class="btn btn-secondary btn-sm btn-icon">
+                  <span class="material-icons-round">open_in_new</span>
+                </a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% else %}
+    <div class="card card-body" style="text-align:center;padding:40px;">
+      <span class="material-icons-round" style="font-size:40px;color:var(--text-muted);display:block;margin-bottom:12px;">lightbulb</span>
+      <p class="text-muted">No hay centros en CLIC todavía.</p>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Estadísticas -->
+  <div class="tab-content" data-tab-content="estadisticas">
+    <div class="grid-2 mb-3">
+      <div class="card">
+        <div class="card-header"><span class="card-title">Estado de centros</span></div>
+        <div class="card-body"><div class="chart-wrap"><canvas id="chart-estados"></canvas></div></div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Centros y ANR por año</span>
+          <span id="clic-anio-sublabel" class="text-sm text-muted">Centros</span>
+        </div>
+        <div class="card-body"><div class="chart-wrap"><canvas id="chart-anio"></canvas></div></div>
+      </div>
+    </div>
+
+    <div class="grid-2 mb-3">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Cobertura territorial</span>
+          <span id="clic-mun-sublabel" class="text-sm text-muted">Centros por municipio</span>
+        </div>
+        <div class="card-body"><div class="chart-wrap-lg"><canvas id="chart-municipios"></canvas></div></div>
+      </div>
+      {% if por_area %}
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Área temática</span>
+          <span id="clic-area-sublabel" class="text-sm text-muted">Centros por área</span>
+        </div>
+        <div class="card-body"><div class="chart-wrap-lg"><canvas id="chart-area"></canvas></div></div>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Tabla de municipios -->
+    {% if por_municipio %}
+    <div class="card">
+      <div class="card-header"><span class="card-title">Detalle por municipio</span></div>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr><th>Municipio</th><th>Centros</th><th>Activos</th><th>Finalizados</th><th id="clic-mun-tbl-hdr">ANR total</th></tr>
+          </thead>
+          <tbody>
+            {% for m in por_municipio %}
+            <tr>
+              <td style="font-weight:600;">{{ m.municipio }}</td>
+              <td>{{ m.n }}</td>
+              <td><span class="badge badge-activo">{{ m.activos }}</span></td>
+              <td><span class="badge badge-finalizado">{{ m.finalizados }}</span></td>
+              <td class="mono text-sm clic-mun-anr"
+                  data-anr="{{ m.total_anr }}"
+                  data-real="{{ m.total_real }}">${{ "%.1f"|format(m.total_anr/1e6) }}M</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Hitos -->
+  <div class="tab-content" data-tab-content="hitos">
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Avance global por hito</span>
+        <span class="text-sm text-muted">Centros que completaron cada etapa</span>
+      </div>
+      <div class="card-body">
+        {% if total > 0 %}
+        <div class="chart-wrap-lg mb-3"><canvas id="chart-hitos"></canvas></div>
+        {% endif %}
+        <div class="section-title mt-2">Detalle por hito</div>
+        <div class="hitos-list">
+          {% for h in hitos %}
+          {% set completados_h = avances_por_hito.get(h.id, 0) %}
+          {% set pct_h = (completados_h / total * 100)|int if total > 0 else 0 %}
+          <div class="hito-item">
+            <div class="hito-dot {% if pct_h == 100 %}completado{% elif pct_h > 0 %}en_proceso{% else %}pendiente{% endif %}">
+              <span class="material-icons-round" style="font-size:14px;">
+                {% if pct_h == 100 %}check{% elif pct_h > 0 %}hourglass_empty{% else %}radio_button_unchecked{% endif %}
+              </span>
+            </div>
+            <div class="hito-info">
+              <div class="hito-nombre">{{ loop.index }}. {{ h.nombre }}</div>
+              <div class="hito-meta">{{ completados_h }} de {{ total }} centros completaron esta etapa</div>
+              <div class="progress-bar mt-1" style="height:4px;max-width:300px;">
+                <div class="progress-fill" style="width:{{ pct_h }}%;background:{{ programa.color }};"></div>
+              </div>
+            </div>
+            <div style="font-family:'Sora',sans-serif;font-weight:700;font-size:16px;color:{{ programa.color }};">{{ pct_h }}%</div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Novedades -->
+  <div class="tab-content" data-tab-content="novedades">
+    <div class="card">
+      <div class="card-header"><span class="card-title">Últimas novedades de los centros</span></div>
+      <div class="card-body" style="padding:14px 20px;">
+        {% if novedades_recientes %}
+        {% for nov in novedades_recientes %}
+        <div class="novedad-pill">
+          <div class="novedad-tag" style="background:{{ programa.color }};"></div>
+          <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+              <span style="font-weight:600;font-size:13.5px;">{{ nov.titulo }}</span>
+              <span class="badge badge-{{ nov.tipo }}">{{ nov.tipo|replace('_',' ') }}</span>
+            </div>
+            <div class="feed-meta">
+              <span class="tag">{{ nov.centro[:35] }}{% if nov.centro|length > 35 %}…{% endif %}</span>
+              <span style="margin:0 4px;">·</span>
+              {{ nov.municipio or '' }}
+              <span style="margin:0 4px;">·</span>
+              {{ nov.fecha or '' }}
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+        {% else %}
+        <p class="text-muted text-sm" style="padding:16px 0;">No hay novedades registradas aún.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const CLIC_DATA = {
+  estados:    {{ estados_dist|tojson }},
+  municipios: {{ por_municipio|tojson }},
+  anio:       {{ por_anio|tojson }},
+  area:       {{ por_area|tojson }},
+};
+const CLIC_COLOR     = '{{ programa.color }}';
+const CLIC_TOTAL_ANR = {{ total_anr }};
+const CLIC_TOTAL_REAL= {{ total_anr_real }};
+const CLIC_IPC_FECHA = {{ ipc_fecha_val|tojson }};
+
+function fmtM(v) {
+  if (v >= 1e9) return '$'+(v/1e9).toFixed(1)+'MM';
+  if (v >= 1e6) return '$'+(v/1e6).toFixed(0)+'M';
+  return '$'+Math.round(v).toLocaleString('es-AR');
+}
+
+let clicMode = 'n'; // 'n' = centros | 'anr' = ANR
+let chartMun, chartAnio, chartArea;
+
+/* ── Estado donut (estático) ─────────────────────────────── */
+const estadosLabels = {activo:'Activo',finalizado:'Finalizado',suspendido:'Suspendido',en_evaluacion:'En evaluación'};
+new Chart(document.getElementById('chart-estados'), {
+  type:'doughnut',
+  data:{
+    labels: CLIC_DATA.estados.map(e=>estadosLabels[e.estado]||e.estado),
+    datasets:[{data:CLIC_DATA.estados.map(e=>e.n),
+               backgroundColor:['#22A954','#00AEC3','#D32F2F','#F5A623','#9C27B0'],
+               borderWidth:3,borderColor:'#fff'}]
+  },
+  options:{responsive:true,maintainAspectRatio:false,cutout:'60%',plugins:{legend:{position:'right'}}}
+});
+
+/* ── ANR / centros por año ───────────────────────────────── */
+chartAnio = new Chart(document.getElementById('chart-anio'), {
+  type:'bar',
+  data:{
+    labels: CLIC_DATA.anio.map(d=>d.anio),
+    datasets:[{
+      label:'Centros',
+      data: CLIC_DATA.anio.map(d=>d.n),
+      backgroundColor: CLIC_COLOR+'BB', borderColor: CLIC_COLOR, borderWidth:2, borderRadius:5
+    }]
+  },
+  options:{responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{display:false}},
+    scales:{y:{beginAtZero:true,grid:{color:'#EEF1F5'}},x:{grid:{display:false}}}}
+});
+
+/* ── Municipios ──────────────────────────────────────────── */
+if (CLIC_DATA.municipios.length) {
+  chartMun = new Chart(document.getElementById('chart-municipios'), {
+    type:'bar',
+    data:{
+      labels: CLIC_DATA.municipios.map(m=>m.municipio),
+      datasets:[
+        {label:'Activos',    data:CLIC_DATA.municipios.map(m=>m.activos),    backgroundColor:'#22A954BB', borderColor:'#22A954', borderWidth:2, borderRadius:4},
+        {label:'Finalizados',data:CLIC_DATA.municipios.map(m=>m.finalizados),backgroundColor:'#00AEC3BB', borderColor:'#00AEC3', borderWidth:2, borderRadius:4}
+      ]
+    },
+    options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',
+             plugins:{legend:{position:'top'}},
+             scales:{x:{beginAtZero:true,stacked:true,grid:{color:'#EEF1F5'}},y:{stacked:true,grid:{display:false}}}}
+  });
+}
+
+/* ── Área temática ───────────────────────────────────────── */
+{% if por_area %}
+const areaEl = document.getElementById('chart-area');
+if (areaEl) {
+  chartArea = new Chart(areaEl, {
+    type:'bar',
+    data:{
+      labels: CLIC_DATA.area.map(a=>a.area_tematica),
+      datasets:[{label:'Centros', data:CLIC_DATA.area.map(a=>a.n),
+                 backgroundColor:CLIC_COLOR+'BB',borderColor:CLIC_COLOR,borderWidth:2,borderRadius:5}]
+    },
+    options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',
+             plugins:{legend:{display:false}},
+             scales:{x:{beginAtZero:true,grid:{color:'#EEF1F5'}},y:{grid:{display:false}}}}
+  });
+}
+{% endif %}
+
+/* ── Hitos (estático) ────────────────────────────────────── */
+{% if total > 0 %}
+const hitosLabels = {{ hitos|map(attribute='nombre')|list|tojson }};
+const hitosVals   = {{ hitos|map(attribute='id')|list|tojson }}.map(id=>{{ avances_por_hito|tojson }}[id]||0);
+new Chart(document.getElementById('chart-hitos'), {
+  type:'bar',
+  data:{
+    labels: hitosLabels.map((h,i)=>(i+1)+'. '+h),
+    datasets:[
+      {label:'Completados',   data:hitosVals,               backgroundColor:CLIC_COLOR+'CC',borderColor:CLIC_COLOR,borderWidth:2,borderRadius:5},
+      {label:'Total centros', data:hitosLabels.map(()=>{{ total }}),backgroundColor:'#EEF1F5',borderColor:'#DDE3EC',borderWidth:1,borderRadius:5}
+    ]
+  },
+  options:{responsive:true,maintainAspectRatio:false,
+           plugins:{legend:{position:'top'}},
+           scales:{y:{beginAtZero:true,max:{{ total }},grid:{color:'#EEF1F5'}},x:{grid:{display:false},ticks:{maxRotation:45}}}}
+});
+{% endif %}
+
+/* ── Switch de modo ──────────────────────────────────────── */
+function clicSetMode(mode) {
+  clicMode = mode;
+  const isAnr  = mode !== 'n';
+  const isReal = mode === 'real';
+  const key    = isReal ? 'total_real' : 'total_anr';
+  const munColor  = isReal ? '#1A9E5C' : '#E0A800';
+
+  ['n','anr','real'].forEach(m => {
+    const btn = document.getElementById('clic-btn-'+m);
+    if (btn) btn.className = 'metric-btn' + (m === mode ? ' metric-btn-active' : '');
+  });
+
+  /* Header y KPI */
+  const hdrVal = document.getElementById('clic-hdr-val');
+  const hdrLbl = document.getElementById('clic-hdr-label');
+  const kpiVal = document.getElementById('clic-kpi-val');
+  const kpiLbl = document.getElementById('clic-kpi-label');
+  const v = isReal ? CLIC_TOTAL_REAL : CLIC_TOTAL_ANR;
+  const lbl = isReal ? ('ANR real pesos '+CLIC_IPC_FECHA) : (isAnr ? 'ANR nominal' : 'ANR comprometido');
+  if (hdrVal) { hdrVal.textContent = '$'+(v/1e6).toFixed(1)+'M'; hdrVal.style.color = isReal ? '#A5F3D0' : ''; }
+  if (hdrLbl) hdrLbl.textContent = lbl;
+  if (kpiVal) { kpiVal.textContent = '$'+(v/1e6).toFixed(1)+'M'; kpiVal.style.color = isReal ? 'var(--green)' : ''; }
+  if (kpiLbl) kpiLbl.textContent = isReal ? ('ANR real '+CLIC_IPC_FECHA) : (isAnr ? 'ANR nominal' : 'ANR comprometido');
+
+  /* Tabla de centros */
+  document.querySelectorAll('.clic-proy-anr').forEach(el => {
+    const nom  = parseFloat(el.dataset.nom  || 0);
+    const real = parseFloat(el.dataset.real || 0);
+    if (!isAnr) {
+      el.textContent = nom > 0 ? '$' + (nom/1e6).toFixed(1) + 'M' : '—';
+      el.style.color = '';
+    } else {
+      const val = isReal ? real : nom;
+      el.textContent = val > 0 ? '$' + (val/1e6).toFixed(1) + 'M' : '—';
+      el.style.color = isReal ? 'var(--green)' : '';
+    }
+  });
+
+  /* Año */
+  if (chartAnio) {
+    chartAnio.data.datasets[0].data  = CLIC_DATA.anio.map(d => isAnr ? (d[key]||0) : d.n);
+    chartAnio.data.datasets[0].label = isAnr ? (isReal ? 'ANR real ($)' : 'ANR nominal ($)') : 'Centros';
+    chartAnio.data.datasets[0].backgroundColor = isReal ? '#1A9E5CBB' : (isAnr ? '#E0A800BB' : CLIC_COLOR+'BB');
+    chartAnio.data.datasets[0].borderColor      = isReal ? '#1A9E5C'   : (isAnr ? '#E0A800'   : CLIC_COLOR);
+    chartAnio.options.scales.y.ticks = isAnr ? {callback: v => fmtM(v)} : {};
+    chartAnio.options.plugins.tooltip = isAnr ? {callbacks:{label: ctx => ' '+fmtM(ctx.raw)}} : {};
+    chartAnio.update();
+    const sub = document.getElementById('clic-anio-sublabel');
+    if (sub) sub.textContent = isReal ? ('ANR real '+CLIC_IPC_FECHA) : (isAnr ? 'ANR nominal' : 'Centros');
+  }
+
+  /* Municipios chart */
+  if (chartMun) {
+    if (isAnr) {
+      const munSort = [...CLIC_DATA.municipios].sort((a,b)=>(b[key]||0)-(a[key]||0));
+      chartMun.data.labels = munSort.map(m=>m.municipio);
+      chartMun.data.datasets = [{
+        label: isReal ? 'ANR real' : 'ANR nominal',
+        data: munSort.map(m=>m[key]||0),
+        backgroundColor: munColor+'BB', borderColor: munColor, borderWidth:2, borderRadius:4
+      }];
+      chartMun.options.scales.x.stacked = false;
+      chartMun.options.scales.y.stacked = false;
+      chartMun.options.scales.x.ticks = {callback: v => fmtM(v)};
+    } else {
+      chartMun.data.labels = CLIC_DATA.municipios.map(m=>m.municipio);
+      chartMun.data.datasets = [
+        {label:'Activos',    data:CLIC_DATA.municipios.map(m=>m.activos),    backgroundColor:'#22A954BB', borderColor:'#22A954', borderWidth:2, borderRadius:4},
+        {label:'Finalizados',data:CLIC_DATA.municipios.map(m=>m.finalizados),backgroundColor:'#00AEC3BB', borderColor:'#00AEC3', borderWidth:2, borderRadius:4}
+      ];
+      chartMun.options.scales.x.stacked = true;
+      chartMun.options.scales.y.stacked = true;
+      chartMun.options.scales.x.ticks = {};
+    }
+    chartMun.update();
+    const sub = document.getElementById('clic-mun-sublabel');
+    if (sub) sub.textContent = isReal ? ('ANR real por municipio') : (isAnr ? 'ANR por municipio' : 'Centros por municipio');
+  }
+
+  /* Área chart */
+  if (chartArea) {
+    chartArea.data.datasets[0].data  = CLIC_DATA.area.map(a => isAnr ? (a[key]||0) : a.n);
+    chartArea.data.datasets[0].label = isReal ? 'ANR real' : (isAnr ? 'ANR nominal' : 'Centros');
+    chartArea.data.datasets[0].backgroundColor = isReal ? '#1A9E5CBB' : (isAnr ? '#E0A800BB' : CLIC_COLOR+'BB');
+    chartArea.data.datasets[0].borderColor      = isReal ? '#1A9E5C'   : (isAnr ? '#E0A800'   : CLIC_COLOR);
+    chartArea.options.scales.x.ticks = isAnr ? {callback: v => fmtM(v)} : {};
+    chartArea.update();
+    const sub = document.getElementById('clic-area-sublabel');
+    if (sub) sub.textContent = isReal ? 'ANR real por área' : (isAnr ? 'ANR nominal por área' : 'Centros por área');
+  }
+
+  /* Tabla municipios */
+  const tblHdr = document.getElementById('clic-mun-tbl-hdr');
+  if (tblHdr) tblHdr.textContent = isReal ? ('ANR real ('+CLIC_IPC_FECHA+')') : 'ANR total';
+  document.querySelectorAll('.clic-mun-anr').forEach(el => {
+    const val = parseFloat(isReal ? (el.dataset.real||0) : (el.dataset.anr||0));
+    el.textContent = '$' + (val/1e6).toFixed(1) + 'M';
+    el.style.color = isReal ? 'var(--green)' : '';
+  });
+}
+</script>
+{% endblock %}

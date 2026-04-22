@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% block title %}Adoptantes{% endblock %}
+{% block breadcrumb %}Adoptantes{% endblock %}
+
+{% block content %}
+<!-- KPI cards -->
+<div class="stat-grid mb-3">
+  <div class="stat-card">
+    <div class="stat-icon blue"><span class="material-icons-round">business</span></div>
+    <div>
+      <div class="stat-value">{{ kpi.n_empresas }}</div>
+      <div class="stat-label">Empresas adoptantes</div>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon green"><span class="material-icons-round">location_city</span></div>
+    <div>
+      <div class="stat-value">{{ kpi.n_municipios }}</div>
+      <div class="stat-label">Municipios adoptantes</div>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon purple"><span class="material-icons-round">rocket_launch</span></div>
+    <div>
+      <div class="stat-value">{{ kpi.n_proyectos }}</div>
+      <div class="stat-label">Proyectos con adoptante</div>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon gold"><span class="material-icons-round">payments</span></div>
+    <div>
+      <div class="stat-value" id="adop-kpi-anr" style="font-size:20px;">${{ "%.1f"|format(kpi.total_anr/1e9) }}MM</div>
+      <div class="stat-label">ANR total</div>
+    </div>
+  </div>
+</div>
+
+<!-- Tabs -->
+<div class="card">
+  <div class="card-header" style="flex-wrap:wrap;gap:8px;">
+    <div style="display:flex;gap:4px;">
+      <a href="{{ url_for('adoptantes.list', tab='empresas') }}"
+         class="tab-btn {% if tab=='empresas' %}active{% endif %}"
+         style="text-decoration:none;">
+        <span class="material-icons-round" style="font-size:14px;vertical-align:middle;">business</span>
+        Empresas ({{ empresas|length }})
+      </a>
+      <a href="{{ url_for('adoptantes.list', tab='municipios') }}"
+         class="tab-btn {% if tab=='municipios' %}active{% endif %}"
+         style="text-decoration:none;">
+        <span class="material-icons-round" style="font-size:14px;vertical-align:middle;">location_city</span>
+        Municipios ({{ municipios|length }})
+      </a>
+    </div>
+    <!-- Live search -->
+    <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
+      <span class="material-icons-round" style="font-size:16px;color:var(--text-muted);">search</span>
+      <input id="adop-search" type="text" class="form-control" placeholder="Buscar…"
+             style="width:220px;padding:5px 10px;font-size:13px;"
+             oninput="adopFilter(this.value)">
+    </div>
+  </div>
+
+  {% if tab == 'empresas' %}
+  <!-- Empresas table -->
+  <div style="overflow-x:auto;">
+    <table class="table" id="adop-table">
+      <thead>
+        <tr>
+          <th>Empresa adoptante</th>
+          <th>Municipio</th>
+          <th>Sector</th>
+          <th>Programas</th>
+          <th style="text-align:right;">Proyectos</th>
+          <th style="text-align:right;">ANR</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in empresas %}
+        {% set prog_list = (e.programas or '').split(',') %}
+        {% set color_list = (e.colores or '').split(',') %}
+        <tr data-search="{{ (e.adoptante or '') ~ ' ' ~ (e.municipio or '') ~ ' ' ~ (e.sector or '') ~ ' ' ~ (e.programas or '') }}">
+          <td style="font-weight:600;max-width:260px;">{{ e.adoptante }}</td>
+          <td class="text-sm">{{ e.municipio or '—' }}</td>
+          <td class="text-sm" style="max-width:200px;">{{ e.sector or '—' }}</td>
+          <td>
+            {% for i in range(prog_list|length) %}
+            {% if prog_list[i] %}
+            <span class="badge" style="background:{{ color_list[i] if i < color_list|length else '#666' }};color:#fff;font-size:10px;">{{ prog_list[i] }}</span>
+            {% endif %}
+            {% endfor %}
+          </td>
+          <td style="text-align:right;font-weight:600;">{{ e.n_proyectos }}</td>
+          <td style="text-align:right;font-family:monospace;font-size:13px;" data-anr="{{ e.total_anr|int }}">
+            {{ "$%.0f M"|format((e.total_anr or 0)/1e6) }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if not empresas %}
+  <div class="card-body" style="text-align:center;padding:40px;color:var(--text-muted);">
+    <span class="material-icons-round" style="font-size:48px;display:block;margin-bottom:8px;">business_off</span>
+    No hay empresas adoptantes registradas.
+  </div>
+  {% endif %}
+
+  {% else %}
+  <!-- Municipios table -->
+  <div style="overflow-x:auto;">
+    <table class="table" id="adop-table">
+      <thead>
+        <tr>
+          <th>Municipio adoptante</th>
+          <th>Municipio (ubicación)</th>
+          <th>Programas</th>
+          <th style="text-align:right;">Proyectos</th>
+          <th style="text-align:right;">ANR</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in municipios %}
+        {% set prog_list = (m.programas or '').split(',') %}
+        {% set color_list = (m.colores or '').split(',') %}
+        <tr data-search="{{ (m.adoptante or '') ~ ' ' ~ (m.municipio or '') ~ ' ' ~ (m.programas or '') }}">
+          <td style="font-weight:600;">{{ m.adoptante }}</td>
+          <td class="text-sm">{{ m.municipio or '—' }}</td>
+          <td>
+            {% for i in range(prog_list|length) %}
+            {% if prog_list[i] %}
+            <span class="badge" style="background:{{ color_list[i] if i < color_list|length else '#666' }};color:#fff;font-size:10px;">{{ prog_list[i] }}</span>
+            {% endif %}
+            {% endfor %}
+          </td>
+          <td style="text-align:right;font-weight:600;">{{ m.n_proyectos }}</td>
+          <td style="text-align:right;font-family:monospace;font-size:13px;" data-anr="{{ m.total_anr|int }}">
+            {{ "$%.0f M"|format((m.total_anr or 0)/1e6) }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if not municipios %}
+  <div class="card-body" style="text-align:center;padding:40px;color:var(--text-muted);">
+    <span class="material-icons-round" style="font-size:48px;display:block;margin-bottom:8px;">location_off</span>
+    No hay municipios adoptantes registrados.
+  </div>
+  {% endif %}
+  {% endif %}
+
+  <!-- Row count -->
+  <div style="padding:8px 20px;border-top:1px solid var(--border);font-size:12px;color:var(--text-muted);">
+    <span id="adop-count"></span>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function(){
+  const rows = Array.from(document.querySelectorAll('#adop-table tbody tr'));
+  const countEl = document.getElementById('adop-count');
+
+  function updateCount() {
+    const visible = rows.filter(r => r.style.display !== 'none').length;
+    countEl.textContent = visible === rows.length
+      ? rows.length + ' registros'
+      : visible + ' de ' + rows.length + ' registros';
+  }
+
+  window.adopFilter = function(q) {
+    const term = q.toLowerCase().trim();
+    rows.forEach(r => {
+      r.style.display = (!term || (r.dataset.search || '').toLowerCase().includes(term)) ? '' : 'none';
+    });
+    updateCount();
+  };
+
+  updateCount();
+})();
+</script>
+{% endblock %}

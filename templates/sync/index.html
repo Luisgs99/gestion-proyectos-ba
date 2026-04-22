@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+{% block title %}Sync Google Sheets{% endblock %}
+{% block breadcrumb %}Sync Google Sheets{% endblock %}
+
+{% block content %}
+<div class="grid-2" style="gap:20px;align-items:start;">
+
+  <!-- Panel izquierdo: configuración por programa -->
+  <div>
+
+    <!-- Ponderadores IPC -->
+    <div class="card mb-3">
+      <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+        <span>Ponderadores IPC</span>
+        <form method="post" action="{{ url_for('sync.run_ponderadores') }}">
+          <button type="submit" class="btn btn-primary btn-sm"
+                  {% if not ipc_cfg.get('ipc_ponderadores_url') %}disabled title="Configurá la URL primero"{% endif %}>
+            <span class="material-icons-round">sync</span> Sincronizar
+          </button>
+        </form>
+      </div>
+      <div class="card-body">
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">
+          Actualiza la tabla <code>ponderadores_ipc</code> a partir del sheet matricial (filas = desembolso, columnas = valuación).
+          {% if ipc_cfg.get('ipc_ponderadores_ultima_sync') %}
+          <br>Última sync: <strong>{{ ipc_cfg.ipc_ponderadores_ultima_sync[:16] }}</strong>
+          &nbsp;·&nbsp; Fecha de valuación activa: <strong>{{ ipc_cfg.get('ipc_ultima_fecha', '—') }}</strong>
+          {% endif %}
+        </div>
+        {% if is_admin() %}
+        <form method="post" action="{{ url_for('sync.ponderadores_config_guardar') }}"
+              style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">
+          <div style="flex:1;min-width:220px;">
+            <label class="form-label" style="font-size:11px;">URL del Google Sheet (CSV)</label>
+            <input type="url" name="sheet_url" class="form-control" style="font-size:12px;"
+                   value="{{ ipc_cfg.get('ipc_ponderadores_url', '') }}"
+                   placeholder="https://docs.google.com/spreadsheets/d/…">
+          </div>
+          <button type="submit" class="btn btn-secondary btn-sm">Guardar URL</button>
+        </form>
+        {% elif ipc_cfg.get('ipc_ponderadores_url') %}
+        <div style="font-size:11px;color:var(--text-muted);word-break:break-all;">
+          {{ ipc_cfg.ipc_ponderadores_url }}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">Configuración por programa</div>
+      <div class="card-body" style="padding:0;">
+        {% for p in programas %}
+        {% set cfg = configs.get(p.id) %}
+        {% set soportado = p.codigo in supported %}
+        <div style="padding:16px 20px;border-bottom:1px solid var(--border-color);{% if not soportado %}opacity:.5{% endif %}">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px;">
+            <div>
+              <div style="font-weight:600;font-size:14px;">
+                <span class="badge" style="background:{{ p.color }}22;color:{{ p.color }};margin-right:6px;">{{ p.codigo }}</span>
+                {{ p.nombre }}
+              </div>
+              {% if not soportado %}
+              <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Mapeo de columnas pendiente</div>
+              {% elif cfg %}
+              <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">
+                Última sync: {{ cfg.ultima_sync or 'nunca' }}
+              </div>
+              {% endif %}
+            </div>
+            {% if soportado and cfg %}
+            <form method="post" action="{{ url_for('sync.run', programa_id=p.id) }}">
+              <button type="submit" class="btn btn-primary btn-sm">
+                <span class="material-icons-round">sync</span> Sincronizar
+              </button>
+            </form>
+            {% endif %}
+          </div>
+
+          {% if soportado and is_admin() %}
+          <form method="post" action="{{ url_for('sync.config_guardar') }}" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">
+            <input type="hidden" name="programa_id" value="{{ p.id }}">
+            <div style="flex:1;min-width:220px;">
+              <label class="form-label" style="font-size:11px;">URL del Google Sheet</label>
+              <input type="url" name="sheet_url" class="form-control" style="font-size:12px;"
+                     value="{{ cfg.sheet_url if cfg else '' }}"
+                     placeholder="https://docs.google.com/spreadsheets/d/…">
+            </div>
+            <div style="min-width:140px;">
+              <label class="form-label" style="font-size:11px;">Campo clave <span style="color:var(--text-muted);font-weight:400;">(col. en DB)</span></label>
+              <input type="text" name="campo_clave" class="form-control" style="font-size:12px;"
+                     value="{{ cfg.campo_clave if cfg else 'codigo' }}"
+                     placeholder="codigo / cuit / ...">
+            </div>
+            <button type="submit" class="btn btn-secondary btn-sm">Guardar URL</button>
+          </form>
+          {% elif soportado and cfg %}
+          <div style="font-size:11px;color:var(--text-muted);word-break:break-all;">{{ cfg.sheet_url }}</div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Ayuda -->
+    <div class="card card-body mt-3" style="font-size:12px;color:var(--text-secondary);line-height:1.7;">
+      <div style="font-weight:600;margin-bottom:6px;">Cómo obtener la URL del sheet</div>
+      <ol style="padding-left:18px;margin:0;">
+        <li>Abrí el Google Sheet → <strong>Archivo → Compartir → Publicar en la web</strong></li>
+        <li>Elegí la hoja correcta y el formato <strong>CSV</strong>, luego publicá</li>
+        <li>Copiá la URL que aparece y pegala acá</li>
+      </ol>
+      <div style="margin-top:8px;">
+        También podés pegar la URL normal de edición (<code>/edit</code>) si el sheet
+        está compartido como "cualquiera con el enlace puede ver" — la app lo convierte sola.
+      </div>
+    </div>
+  </div>
+
+  <!-- Panel derecho: historial de sync -->
+  <div class="card">
+    <div class="card-header">Historial de sincronizaciones</div>
+    {% if logs %}
+    <table class="table" style="font-size:12px;">
+      <thead>
+        <tr>
+          <th>Programa</th>
+          <th>Fecha</th>
+          <th style="text-align:center;">Ins.</th>
+          <th style="text-align:center;">Act.</th>
+          <th style="text-align:center;">Err.</th>
+          <th>Por</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for l in logs %}
+        <tr>
+          <td style="font-weight:500;">{{ l.prog_nombre }}</td>
+          <td>{{ l.created_at[:16] }}</td>
+          <td style="text-align:center;color:var(--green);font-weight:600;">{{ l.insertados }}</td>
+          <td style="text-align:center;color:var(--blue);font-weight:600;">{{ l.actualizados }}</td>
+          <td style="text-align:center;{% if l.errores %}color:var(--red);font-weight:600;{% endif %}">{{ l.errores }}</td>
+          <td>{{ l.user_nombre or '—' }}</td>
+        </tr>
+        {% if l.detalle %}
+        <tr>
+          <td colspan="6" style="padding:2px 12px 8px;color:var(--red);font-size:11px;font-family:monospace;white-space:pre-wrap;">{{ l.detalle[:400] }}</td>
+        </tr>
+        {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="card-body" style="text-align:center;color:var(--text-muted);padding:30px;">
+      <span class="material-icons-round" style="font-size:36px;display:block;margin-bottom:6px;">history</span>
+      Sin sincronizaciones previas.
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

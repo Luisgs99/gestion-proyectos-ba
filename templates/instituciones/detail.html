@@ -1,0 +1,408 @@
+{% extends "base.html" %}
+{% block title %}{{ inst.nombre }}{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('instituciones.list') }}" style="color:var(--text-muted);text-decoration:none;">Instituciones</a>
+  / {{ inst.nombre_corto or inst.nombre }}
+{% endblock %}
+
+{% block topbar_actions %}
+  {% if can_edit() %}
+  <a href="{{ url_for('instituciones.editar', iid=inst.id) }}" class="btn btn-secondary btn-sm">
+    <span class="material-icons-round">edit</span> Editar
+  </a>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+
+<!-- Header de institución -->
+<div style="background:linear-gradient(135deg,#1565C0,#1E88E5);border-radius:12px;padding:22px 28px;margin-bottom:20px;color:#fff;display:flex;align-items:flex-start;gap:20px;flex-wrap:wrap;">
+  <div style="flex:1;min-width:200px;">
+    <div style="font-size:11px;opacity:.7;font-family:monospace;margin-bottom:4px;text-transform:uppercase;letter-spacing:.08em;">
+      {{ inst.tipo }} {% if inst.municipio %}· {{ inst.municipio }}{% endif %}
+    </div>
+    <h1 style="font-size:22px;font-weight:700;margin-bottom:6px;">{{ inst.nombre }}</h1>
+    {% if inst.nombre_corto %}
+    <div style="font-size:14px;opacity:.8;">{{ inst.nombre_corto }}</div>
+    {% endif %}
+    {% if inst.website %}
+    <a href="{{ inst.website }}" target="_blank" rel="noopener" style="font-size:12px;opacity:.7;color:#fff;margin-top:4px;display:inline-block;">
+      <span class="material-icons-round" style="font-size:13px;vertical-align:middle;">open_in_new</span> {{ inst.website }}
+    </a>
+    {% endif %}
+  </div>
+  <div style="display:flex;flex-direction:column;gap:8px;text-align:center;">
+    <div style="background:rgba(255,255,255,.15);border-radius:10px;padding:12px 20px;backdrop-filter:blur(4px);">
+      <div style="font-size:26px;font-weight:700;">{{ proyectos_vinculados|length }}</div>
+      <div style="font-size:11px;opacity:.75;">Proyectos vinculados</div>
+    </div>
+    <span style="background:rgba(255,255,255,.2);border-radius:20px;padding:4px 14px;font-size:12px;font-weight:600;letter-spacing:.04em;">
+      {{ inst.estado_vinculo|replace('_',' ')|upper }}
+    </span>
+  </div>
+</div>
+
+<!-- Tabs -->
+<div style="border-bottom:2px solid var(--border-color);margin-bottom:20px;display:flex;gap:0;">
+  {% for t, label, icon in [('info','Información','info'),('novedades','Novedades','campaign'),('contactos','Contactos','contacts'),('documentos','Documentos','folder_open'),('proyectos','Proyectos','rocket_launch')] %}
+  <a href="?tab={{ t }}"
+     style="padding:10px 18px;font-size:13px;font-weight:500;text-decoration:none;border-bottom:2px solid transparent;margin-bottom:-2px;
+            color:{% if tab==t %}var(--blue){% else %}var(--text-muted){% endif %};
+            border-bottom-color:{% if tab==t %}var(--blue){% else %}transparent{% endif %};">
+    <span class="material-icons-round" style="font-size:15px;vertical-align:middle;margin-right:4px;">{{ icon }}</span>{{ label }}
+    {% if t == 'contactos' and contactos %}<span class="badge" style="margin-left:4px;font-size:10px;">{{ contactos|length }}</span>{% endif %}
+    {% if t == 'documentos' and documentos %}<span class="badge" style="margin-left:4px;font-size:10px;">{{ documentos|length }}</span>{% endif %}
+    {% if t == 'novedades' and novedades %}<span class="badge" style="margin-left:4px;font-size:10px;">{{ novedades|length }}</span>{% endif %}
+  </a>
+  {% endfor %}
+</div>
+
+
+{# ═══════════════════════════════ TAB INFO ════════════════════════════════ #}
+{% if tab == 'info' %}
+<div class="grid-2" style="gap:20px;align-items:start;">
+  <div class="card card-body">
+    <div class="section-title mb-2">Datos generales</div>
+    <dl style="display:grid;grid-template-columns:140px 1fr;gap:6px 12px;font-size:13px;">
+      <dt class="text-muted">Nombre completo</dt><dd style="font-weight:600;">{{ inst.nombre }}</dd>
+      <dt class="text-muted">Sigla</dt><dd>{{ inst.nombre_corto or '—' }}</dd>
+      <dt class="text-muted">Tipo</dt><dd><span class="badge badge-outline">{{ inst.tipo }}</span></dd>
+      <dt class="text-muted">CUIT</dt><dd>{{ inst.cuit or '—' }}</dd>
+      <dt class="text-muted">Municipio</dt><dd>{{ inst.municipio or '—' }}</dd>
+      <dt class="text-muted">Localidad</dt><dd>{{ inst.localidad or '—' }}</dd>
+      <dt class="text-muted">Provincia</dt><dd>{{ inst.provincia or 'Buenos Aires' }}</dd>
+      <dt class="text-muted">Sitio web</dt>
+      <dd>
+        {% if inst.website %}
+        <a href="{{ inst.website }}" target="_blank" rel="noopener">{{ inst.website }}</a>
+        {% else %}—{% endif %}
+      </dd>
+    </dl>
+    {% if inst.descripcion %}
+    <div class="section-title mb-1 mt-3">Descripción</div>
+    <p style="font-size:13px;color:var(--text-secondary);">{{ inst.descripcion }}</p>
+    {% endif %}
+  </div>
+
+  <div class="card card-body">
+    <div class="section-title mb-2">Vínculo institucional</div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+      <span class="badge badge-{{ inst.estado_vinculo }}" style="font-size:13px;padding:6px 14px;">
+        {{ inst.estado_vinculo|replace('_',' ')|capitalize }}
+      </span>
+    </div>
+    {% if inst.notas_vinculo %}
+    <div style="background:var(--bg-hover);border-radius:8px;padding:14px;font-size:13px;line-height:1.6;white-space:pre-wrap;">{{ inst.notas_vinculo }}</div>
+    {% else %}
+    <p class="text-muted text-sm">Sin notas sobre el vínculo.</p>
+    {% endif %}
+    {% if can_edit() %}
+    <div style="margin-top:12px;">
+      <a href="{{ url_for('instituciones.editar', iid=inst.id) }}" class="btn btn-secondary btn-sm">
+        <span class="material-icons-round">edit</span> Editar notas
+      </a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+
+{# ═══════════════════════════════ TAB NOVEDADES ═══════════════════════════ #}
+{% elif tab == 'novedades' %}
+<div class="grid-2" style="gap:20px;align-items:start;">
+
+  <!-- Timeline de novedades -->
+  <div>
+    {% if novedades %}
+    <div style="display:flex;flex-direction:column;gap:12px;">
+      {% for n in novedades %}
+      <div class="card card-body" style="border-left:3px solid
+        {% if n.tipo == 'acuerdo' %}var(--green)
+        {% elif n.tipo == 'conflicto' %}var(--red)
+        {% elif n.tipo == 'reunion' %}var(--blue)
+        {% elif n.tipo == 'comunicacion' %}var(--orange)
+        {% else %}var(--border-color){% endif %};">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+          <div style="flex:1;">
+            <div style="font-weight:600;font-size:14px;margin-bottom:2px;">{{ n.titulo }}</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">
+              <span class="badge badge-outline" style="font-size:10px;">{{ n.tipo }}</span>
+              · {{ n.fecha }}
+              {% if n.reg_nombre %}· {{ n.reg_nombre }} {{ n.reg_apellido or '' }}{% endif %}
+            </div>
+            {% if n.cuerpo %}
+            <div style="font-size:13px;color:var(--text-secondary);white-space:pre-wrap;">{{ n.cuerpo }}</div>
+            {% endif %}
+          </div>
+          {% if can_edit() %}
+          <form method="post" action="{{ url_for('instituciones.eliminar_novedad', iid=inst.id, nid=n.id) }}"
+                onsubmit="return confirm('¿Eliminar esta novedad?')">
+            <button type="submit" class="btn btn-sm" style="background:none;color:var(--text-muted);padding:4px;">
+              <span class="material-icons-round" style="font-size:16px;">delete</span>
+            </button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="card card-body" style="text-align:center;color:var(--text-muted);">
+      <span class="material-icons-round" style="font-size:40px;display:block;margin-bottom:8px;">campaign</span>
+      Sin novedades registradas.
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Formulario nueva novedad -->
+  {% if can_edit() %}
+  <div class="card card-body">
+    <div class="section-title mb-2">Registrar novedad</div>
+    <form method="post" action="{{ url_for('instituciones.nueva_novedad', iid=inst.id) }}">
+      <div class="mb-2">
+        <label class="form-label">Título *</label>
+        <input type="text" name="titulo" class="form-control" required placeholder="Reunión con rector…">
+      </div>
+      <div class="grid-2 mb-2">
+        <div>
+          <label class="form-label">Tipo</label>
+          <select name="tipo" class="form-control">
+            {% for t in tipos_novedad %}
+            <option value="{{ t }}">{{ t|capitalize }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="form-label">Fecha</label>
+          <input type="date" name="fecha" class="form-control"
+                 value="{{ today }}">
+        </div>
+      </div>
+      <div class="mb-2">
+        <label class="form-label">Descripción</label>
+        <textarea name="cuerpo" class="form-control" rows="4" placeholder="Detalles de la novedad, acuerdos alcanzados, próximos pasos…"></textarea>
+      </div>
+      <button type="submit" class="btn btn-primary btn-sm">Registrar</button>
+    </form>
+  </div>
+  {% endif %}
+
+</div>
+
+
+{# ═══════════════════════════════ TAB CONTACTOS ═══════════════════════════ #}
+{% elif tab == 'contactos' %}
+<div class="grid-2" style="gap:20px;align-items:start;">
+
+  <div>
+    {% if contactos %}
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      {% for c in contactos %}
+      <div class="card card-body" style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+        <div style="flex:1;">
+          <div style="font-weight:600;font-size:14px;">{{ c.nombre }}</div>
+          {% if c.cargo %}<div style="font-size:12px;color:var(--text-muted);">{{ c.cargo }}</div>{% endif %}
+          <div style="margin-top:6px;display:flex;gap:12px;flex-wrap:wrap;">
+            {% if c.email %}
+            <a href="mailto:{{ c.email }}" style="font-size:12px;color:var(--blue);text-decoration:none;">
+              <span class="material-icons-round" style="font-size:13px;vertical-align:middle;">email</span> {{ c.email }}
+            </a>
+            {% endif %}
+            {% if c.telefono %}
+            <span style="font-size:12px;color:var(--text-secondary);">
+              <span class="material-icons-round" style="font-size:13px;vertical-align:middle;">phone</span> {{ c.telefono }}
+            </span>
+            {% endif %}
+          </div>
+          {% if c.notas %}<div style="font-size:12px;color:var(--text-muted);margin-top:4px;font-style:italic;">{{ c.notas }}</div>{% endif %}
+        </div>
+        {% if can_edit() %}
+        <form method="post" action="{{ url_for('instituciones.eliminar_contacto', iid=inst.id, cid=c.id) }}"
+              onsubmit="return confirm('¿Eliminar este contacto?')">
+          <button type="submit" class="btn btn-sm" style="background:none;color:var(--text-muted);padding:4px;">
+            <span class="material-icons-round" style="font-size:16px;">delete</span>
+          </button>
+        </form>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="card card-body" style="text-align:center;color:var(--text-muted);">
+      <span class="material-icons-round" style="font-size:40px;display:block;margin-bottom:8px;">contacts</span>
+      Sin contactos registrados.
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Formulario nuevo contacto -->
+  {% if can_edit() %}
+  <div class="card card-body">
+    <div class="section-title mb-2">Agregar contacto</div>
+    <form method="post" action="{{ url_for('instituciones.nuevo_contacto', iid=inst.id) }}">
+      <div class="mb-2">
+        <label class="form-label">Nombre *</label>
+        <input type="text" name="nombre" class="form-control" required placeholder="Juan Pérez">
+      </div>
+      <div class="mb-2">
+        <label class="form-label">Cargo / Rol</label>
+        <input type="text" name="cargo" class="form-control" placeholder="Secretario de Investigación">
+      </div>
+      <div class="mb-2">
+        <label class="form-label">Email</label>
+        <input type="email" name="email" class="form-control">
+      </div>
+      <div class="mb-2">
+        <label class="form-label">Teléfono</label>
+        <input type="text" name="telefono" class="form-control">
+      </div>
+      <div class="mb-2">
+        <label class="form-label">Notas</label>
+        <textarea name="notas" class="form-control" rows="2" placeholder="Contexto, disponibilidad, preferencias…"></textarea>
+      </div>
+      <button type="submit" class="btn btn-primary btn-sm">Agregar</button>
+    </form>
+  </div>
+  {% endif %}
+
+</div>
+
+
+{# ═══════════════════════════════ TAB DOCUMENTOS ══════════════════════════ #}
+{% elif tab == 'documentos' %}
+<div class="grid-2" style="gap:20px;align-items:start;">
+
+  <div>
+    {% if documentos %}
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      {% for d in documentos %}
+      <div class="card card-body" style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+        <div style="flex:1;">
+          <div style="font-weight:600;font-size:14px;">{{ d.nombre_doc }}</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">
+            <span class="badge badge-outline" style="font-size:10px;">{{ d.tipo_doc }}</span>
+            {% if d.fecha_doc %}· {{ d.fecha_doc }}{% endif %}
+            {% if d.subido_por_nombre %}· {{ d.subido_por_nombre }} {{ d.subido_por_apellido or '' }}{% endif %}
+          </div>
+          {% if d.descripcion %}<div style="font-size:12px;color:var(--text-secondary);margin-top:4px;">{{ d.descripcion }}</div>{% endif %}
+        </div>
+        <div style="display:flex;gap:4px;flex-shrink:0;">
+          <a href="{{ url_for('instituciones.descargar_doc', iid=inst.id, did=d.id) }}"
+             class="btn btn-secondary btn-sm" title="Descargar">
+            <span class="material-icons-round" style="font-size:15px;">download</span>
+          </a>
+          {% if can_edit() %}
+          <form method="post" action="{{ url_for('instituciones.eliminar_doc', iid=inst.id, did=d.id) }}"
+                onsubmit="return confirm('¿Eliminar este documento?')">
+            <button type="submit" class="btn btn-sm" style="background:none;color:var(--text-muted);padding:6px;">
+              <span class="material-icons-round" style="font-size:16px;">delete</span>
+            </button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="card card-body" style="text-align:center;color:var(--text-muted);">
+      <span class="material-icons-round" style="font-size:40px;display:block;margin-bottom:8px;">folder_open</span>
+      Sin documentos subidos.
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Formulario subir documento -->
+  {% if can_edit() %}
+  <div class="card card-body">
+    <div class="section-title mb-2">Subir documento</div>
+    <form method="post" action="{{ url_for('instituciones.subir_doc', iid=inst.id) }}" enctype="multipart/form-data">
+      <div class="mb-2">
+        <label class="form-label">Nombre del documento *</label>
+        <input type="text" name="nombre_doc" class="form-control" required placeholder="Convenio marco 2024">
+      </div>
+      <div class="mb-2">
+        <label class="form-label">Tipo</label>
+        <select name="tipo_doc" class="form-control">
+          {% for t in tipos_doc %}<option value="{{ t }}">{{ t|capitalize }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="mb-2">
+        <label class="form-label">Fecha del documento</label>
+        <input type="date" name="fecha_doc" class="form-control">
+      </div>
+      <div class="mb-2">
+        <label class="form-label">Descripción</label>
+        <textarea name="descripcion" class="form-control" rows="2"></textarea>
+      </div>
+      <div class="mb-2">
+        <label class="form-label">Archivo *</label>
+        <input type="file" name="archivo" class="form-control" required>
+      </div>
+      <button type="submit" class="btn btn-primary btn-sm">Subir</button>
+    </form>
+  </div>
+  {% endif %}
+
+</div>
+
+
+{# ═══════════════════════════════ TAB PROYECTOS ═══════════════════════════ #}
+{% elif tab == 'proyectos' %}
+{% if proyectos_vinculados %}
+<div class="card">
+  <div class="card-header">Proyectos vinculados ({{ proyectos_vinculados|length }})</div>
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Proyecto</th>
+        <th>Programa</th>
+        <th>Año</th>
+        <th>Estado</th>
+        <th>ANR</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in proyectos_vinculados %}
+      <tr>
+        <td>
+          <a href="{{ url_for('proyectos.detail', pid=p.id) }}" style="font-weight:500;color:var(--blue);text-decoration:none;">
+            {{ p.nombre }}
+          </a>
+          {% if p.codigo %}<div style="font-size:11px;color:var(--text-muted);font-family:monospace;">{{ p.codigo }}</div>{% endif %}
+        </td>
+        <td>
+          <span class="badge" style="background:{{ p.prog_color }}22;color:{{ p.prog_color }};font-size:11px;">{{ p.prog_codigo }}</span>
+        </td>
+        <td class="text-sm">{{ p.anio or '—' }}</td>
+        <td><span class="badge badge-{{ p.estado }}" style="font-size:11px;">{{ p.estado|replace('_',' ') }}</span></td>
+        <td class="text-sm">
+          {% if p.anr_monto %}
+          <span class="anr-value" data-value="{{ p.anr_monto }}">—</span>
+          {% else %}—{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card card-body" style="text-align:center;padding:40px;color:var(--text-muted);">
+  <span class="material-icons-round" style="font-size:48px;display:block;margin-bottom:8px;">rocket_launch</span>
+  No se encontraron proyectos vinculados a esta institución.
+</div>
+{% endif %}
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Formatear valores ANR
+document.querySelectorAll('.anr-value[data-value]').forEach(el => {
+  const v = parseFloat(el.dataset.value);
+  if (!isNaN(v) && v > 0) {
+    el.textContent = '$\u202f' + v.toLocaleString('es-AR', {minimumFractionDigits:0, maximumFractionDigits:0});
+  }
+});
+</script>
+{% endblock %}
