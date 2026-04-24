@@ -2,41 +2,14 @@
 {% block title %}Adoptantes{% endblock %}
 {% block breadcrumb %}Adoptantes{% endblock %}
 
-{% block content %}
-<!-- KPI cards -->
-<div class="stat-grid mb-3">
-  <div class="stat-card">
-    <div class="stat-icon blue"><span class="material-icons-round">business</span></div>
-    <div>
-      <div class="stat-value">{{ kpi.n_empresas }}</div>
-      <div class="stat-label">Empresas adoptantes</div>
-    </div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-icon green"><span class="material-icons-round">location_city</span></div>
-    <div>
-      <div class="stat-value">{{ kpi.n_municipios }}</div>
-      <div class="stat-label">Municipios adoptantes</div>
-    </div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-icon purple"><span class="material-icons-round">rocket_launch</span></div>
-    <div>
-      <div class="stat-value">{{ kpi.n_proyectos }}</div>
-      <div class="stat-label">Proyectos con adoptante</div>
-    </div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-icon gold"><span class="material-icons-round">payments</span></div>
-    <div>
-      <div class="stat-value" id="adop-kpi-anr" style="font-size:20px;">${{ "%.1f"|format(kpi.total_anr/1e9) }}MM</div>
-      <div class="stat-label">ANR total</div>
-    </div>
-  </div>
-</div>
+{% macro fmt_anr(v) -%}
+{%- set v = (v or 0)|float -%}
+{%- if v >= 1000000 -%}{{ "$%.0f M"|format(v/1e6) }}{%- elif v >= 1000 -%}{{ "$%.0f k"|format(v/1e3) }}{%- else -%}${{ v|int }}{%- endif -%}
+{%- endmacro %}
 
-<!-- Tabs -->
+{% block content %}
 <div class="card">
+  <!-- Tabs -->
   <div class="card-header" style="flex-wrap:wrap;gap:8px;">
     <div style="display:flex;gap:4px;">
       <a href="{{ url_for('adoptantes.list', tab='empresas') }}"
@@ -52,12 +25,32 @@
         Municipios ({{ municipios|length }})
       </a>
     </div>
-    <!-- Live search -->
-    <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
-      <span class="material-icons-round" style="font-size:16px;color:var(--text-muted);">search</span>
+  </div>
+
+  <!-- Filter bar -->
+  <div style="padding:10px 16px;border-bottom:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+    <span class="material-icons-round" style="font-size:15px;color:var(--text-muted);">filter_list</span>
+    <select id="filter-programa" onchange="applyFilters()" class="form-control" style="width:auto;padding:4px 8px;font-size:13px;">
+      <option value="">Todos los programas</option>
+    </select>
+    {% if tab == 'empresas' %}
+    <select id="filter-sector" onchange="applyFilters()" class="form-control" style="width:auto;padding:4px 8px;font-size:13px;">
+      <option value="">Todos los sectores</option>
+    </select>
+    {% endif %}
+    <select id="filter-municipio" onchange="applyFilters()" class="form-control" style="width:auto;padding:4px 8px;font-size:13px;">
+      <option value="">Todos los municipios</option>
+    </select>
+    <div style="display:flex;align-items:center;gap:6px;">
+      <span class="material-icons-round" style="font-size:15px;color:var(--text-muted);">search</span>
       <input id="adop-search" type="text" class="form-control" placeholder="Buscar…"
-             style="width:220px;padding:5px 10px;font-size:13px;"
-             oninput="adopFilter(this.value)">
+             style="width:200px;padding:4px 10px;font-size:13px;"
+             oninput="applyFilters()">
+    </div>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:4px;">
+      <span style="font-size:12px;color:var(--text-muted);margin-right:2px;">ANR:</span>
+      <button id="anr-nominal-btn" class="tab-btn active" onclick="setAnrMode('nominal')" style="font-size:11px;padding:3px 8px;">Nominal</button>
+      <button id="anr-real-btn" class="tab-btn" onclick="setAnrMode('real')" style="font-size:11px;padding:3px 8px;">Real</button>
     </div>
   </div>
 
@@ -67,19 +60,23 @@
     <table class="table" id="adop-table">
       <thead>
         <tr>
-          <th>Empresa adoptante</th>
-          <th>Municipio</th>
-          <th>Sector</th>
+          <th data-col="adoptante"  onclick="sortTable(this)" style="cursor:pointer;user-select:none;">Empresa adoptante <span class="sort-icon" style="color:var(--text-muted);font-size:11px;">↕</span></th>
+          <th data-col="municipio"  onclick="sortTable(this)" style="cursor:pointer;user-select:none;">Municipio <span class="sort-icon" style="color:var(--text-muted);font-size:11px;">↕</span></th>
+          <th data-col="sector"     onclick="sortTable(this)" style="cursor:pointer;user-select:none;">Sector <span class="sort-icon" style="color:var(--text-muted);font-size:11px;">↕</span></th>
           <th>Programas</th>
-          <th style="text-align:right;">Proyectos</th>
-          <th style="text-align:right;">ANR</th>
+          <th data-col="proyectos"  onclick="sortTable(this)" style="text-align:right;cursor:pointer;user-select:none;">Proyectos <span class="sort-icon" style="color:var(--text-muted);font-size:11px;">↕</span></th>
+          <th data-col="anr"        onclick="sortTable(this)" style="text-align:right;cursor:pointer;user-select:none;">ANR <span class="sort-icon" style="color:var(--text-muted);font-size:11px;">↕</span></th>
         </tr>
       </thead>
       <tbody>
         {% for e in empresas %}
         {% set prog_list = (e.programas or '').split(',') %}
         {% set color_list = (e.colores or '').split(',') %}
-        <tr data-search="{{ (e.adoptante or '') ~ ' ' ~ (e.municipio or '') ~ ' ' ~ (e.sector or '') ~ ' ' ~ (e.programas or '') }}">
+        <tr data-search="{{ (e.adoptante or '') ~ ' ' ~ (e.municipio or '') ~ ' ' ~ (e.sector or '') ~ ' ' ~ (e.programas or '') }}"
+            data-programa="{{ e.programas or '' }}"
+            data-sector="{{ e.sector or '' }}"
+            data-municipio="{{ e.municipio or '' }}"
+            data-proyectos="{{ e.n_proyectos }}">
           <td style="font-weight:600;max-width:260px;">{{ e.adoptante }}</td>
           <td class="text-sm">{{ e.municipio or '—' }}</td>
           <td class="text-sm" style="max-width:200px;">{{ e.sector or '—' }}</td>
@@ -91,8 +88,10 @@
             {% endfor %}
           </td>
           <td style="text-align:right;font-weight:600;">{{ e.n_proyectos }}</td>
-          <td style="text-align:right;font-family:monospace;font-size:13px;" data-anr="{{ e.total_anr|int }}">
-            {{ "$%.0f M"|format((e.total_anr or 0)/1e6) }}
+          <td style="text-align:right;font-family:monospace;font-size:13px;" class="anr-cell"
+              data-anr="{{ e.total_anr|int }}"
+              data-anr-real="{{ e.total_anr_actual|int }}">
+            {{ fmt_anr(e.total_anr) }}
           </td>
         </tr>
         {% endfor %}
@@ -112,18 +111,21 @@
     <table class="table" id="adop-table">
       <thead>
         <tr>
-          <th>Municipio adoptante</th>
-          <th>Municipio (ubicación)</th>
+          <th data-col="adoptante"  onclick="sortTable(this)" style="cursor:pointer;user-select:none;">Municipio adoptante <span class="sort-icon" style="color:var(--text-muted);font-size:11px;">↕</span></th>
+          <th data-col="municipio"  onclick="sortTable(this)" style="cursor:pointer;user-select:none;">Municipio (ubicación) <span class="sort-icon" style="color:var(--text-muted);font-size:11px;">↕</span></th>
           <th>Programas</th>
-          <th style="text-align:right;">Proyectos</th>
-          <th style="text-align:right;">ANR</th>
+          <th data-col="proyectos"  onclick="sortTable(this)" style="text-align:right;cursor:pointer;user-select:none;">Proyectos <span class="sort-icon" style="color:var(--text-muted);font-size:11px;">↕</span></th>
+          <th data-col="anr"        onclick="sortTable(this)" style="text-align:right;cursor:pointer;user-select:none;">ANR <span class="sort-icon" style="color:var(--text-muted);font-size:11px;">↕</span></th>
         </tr>
       </thead>
       <tbody>
         {% for m in municipios %}
         {% set prog_list = (m.programas or '').split(',') %}
         {% set color_list = (m.colores or '').split(',') %}
-        <tr data-search="{{ (m.adoptante or '') ~ ' ' ~ (m.municipio or '') ~ ' ' ~ (m.programas or '') }}">
+        <tr data-search="{{ (m.adoptante or '') ~ ' ' ~ (m.municipio or '') ~ ' ' ~ (m.programas or '') }}"
+            data-programa="{{ m.programas or '' }}"
+            data-municipio="{{ m.municipio or '' }}"
+            data-proyectos="{{ m.n_proyectos }}">
           <td style="font-weight:600;">{{ m.adoptante }}</td>
           <td class="text-sm">{{ m.municipio or '—' }}</td>
           <td>
@@ -134,8 +136,10 @@
             {% endfor %}
           </td>
           <td style="text-align:right;font-weight:600;">{{ m.n_proyectos }}</td>
-          <td style="text-align:right;font-family:monospace;font-size:13px;" data-anr="{{ m.total_anr|int }}">
-            {{ "$%.0f M"|format((m.total_anr or 0)/1e6) }}
+          <td style="text-align:right;font-family:monospace;font-size:13px;" class="anr-cell"
+              data-anr="{{ m.total_anr|int }}"
+              data-anr-real="{{ m.total_anr_actual|int }}">
+            {{ fmt_anr(m.total_anr) }}
           </td>
         </tr>
         {% endfor %}
@@ -160,8 +164,11 @@
 {% block scripts %}
 <script>
 (function(){
-  const rows = Array.from(document.querySelectorAll('#adop-table tbody tr'));
+  const rows   = Array.from(document.querySelectorAll('#adop-table tbody tr'));
+  const tbody  = document.querySelector('#adop-table tbody');
   const countEl = document.getElementById('adop-count');
+  let anrMode  = 'nominal';
+  let sortState = { col: null, dir: -1 };
 
   function updateCount() {
     const visible = rows.filter(r => r.style.display !== 'none').length;
@@ -170,13 +177,108 @@
       : visible + ' de ' + rows.length + ' registros';
   }
 
-  window.adopFilter = function(q) {
-    const term = q.toLowerCase().trim();
-    rows.forEach(r => {
-      r.style.display = (!term || (r.dataset.search || '').toLowerCase().includes(term)) ? '' : 'none';
+  function formatAnr(val) {
+    var v = parseInt(val) || 0;
+    if (v >= 1e6) return '$' + Math.round(v / 1e6) + ' M';
+    if (v >= 1e3) return '$' + Math.round(v / 1e3) + ' k';
+    return '$' + v;
+  }
+
+  window.setAnrMode = function(mode) {
+    anrMode = mode;
+    document.getElementById('anr-nominal-btn').classList.toggle('active', mode === 'nominal');
+    document.getElementById('anr-real-btn').classList.toggle('active', mode === 'real');
+    document.querySelectorAll('.anr-cell').forEach(function(cell) {
+      cell.textContent = formatAnr(mode === 'real' ? cell.dataset.anrReal : cell.dataset.anr);
+    });
+  };
+
+  window.applyFilters = function() {
+    const term = (document.getElementById('adop-search')?.value || '').toLowerCase().trim();
+    const prog = (document.getElementById('filter-programa')?.value || '').trim();
+    const sect = (document.getElementById('filter-sector')?.value || '').trim();
+    const mun  = (document.getElementById('filter-municipio')?.value || '').trim();
+
+    rows.forEach(function(r) {
+      let show = true;
+      if (term && !(r.dataset.search || '').toLowerCase().includes(term)) show = false;
+      if (prog) {
+        const rowProgs = (r.dataset.programa || '').split(',').map(p => p.trim());
+        if (!rowProgs.includes(prog)) show = false;
+      }
+      if (sect && (r.dataset.sector    || '') !== sect) show = false;
+      if (mun  && (r.dataset.municipio || '') !== mun)  show = false;
+      r.style.display = show ? '' : 'none';
     });
     updateCount();
   };
+
+  window.sortTable = function(th) {
+    const col = th.dataset.col;
+    if (!col) return;
+    sortState.dir = (sortState.col === col) ? -sortState.dir : -1;
+    sortState.col = col;
+
+    // Update icons
+    document.querySelectorAll('#adop-table th').forEach(function(h) {
+      const ico = h.querySelector('.sort-icon');
+      if (!ico) return;
+      ico.textContent = (h === th)
+        ? (sortState.dir === -1 ? '↓' : '↑')
+        : '↕';
+    });
+
+    rows.sort(function(a, b) {
+      var aVal, bVal;
+      if (col === 'anr') {
+        const key = anrMode === 'real' ? 'anrReal' : 'anr';
+        aVal = parseInt(a.querySelector('.anr-cell')?.dataset[key] || 0);
+        bVal = parseInt(b.querySelector('.anr-cell')?.dataset[key] || 0);
+        return sortState.dir * (aVal - bVal);
+      }
+      if (col === 'proyectos') {
+        aVal = parseInt(a.dataset.proyectos || 0);
+        bVal = parseInt(b.dataset.proyectos || 0);
+        return sortState.dir * (aVal - bVal);
+      }
+      // Text columns: derive cell index from TH position
+      const idx = th.cellIndex;
+      aVal = (a.cells[idx]?.textContent || '').trim();
+      bVal = (b.cells[idx]?.textContent || '').trim();
+      return sortState.dir * aVal.localeCompare(bVal, 'es');
+    });
+
+    rows.forEach(function(r) { tbody.appendChild(r); });
+  };
+
+  // Populate filter dropdowns from rendered row data
+  (function buildFilters() {
+    const programasSet  = new Set();
+    const sectoresSet   = new Set();
+    const municipiosSet = new Set();
+
+    rows.forEach(function(r) {
+      (r.dataset.programa || '').split(',').forEach(function(p) {
+        const v = p.trim(); if (v) programasSet.add(v);
+      });
+      const s = (r.dataset.sector    || '').trim(); if (s && s !== '—') sectoresSet.add(s);
+      const m = (r.dataset.municipio || '').trim(); if (m && m !== '—') municipiosSet.add(m);
+    });
+
+    function populate(id, values) {
+      const sel = document.getElementById(id);
+      if (!sel) return;
+      [...values].sort(function(a,b){ return a.localeCompare(b,'es'); }).forEach(function(v) {
+        const opt = document.createElement('option');
+        opt.value = v; opt.textContent = v;
+        sel.appendChild(opt);
+      });
+    }
+
+    populate('filter-programa',  programasSet);
+    populate('filter-sector',    sectoresSet);
+    populate('filter-municipio', municipiosSet);
+  })();
 
   updateCount();
 })();

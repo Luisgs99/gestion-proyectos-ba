@@ -633,6 +633,24 @@ def _clic_detail(pid, programa, proyectos, hitos):
         f"FROM proyectos p {IPC_JOIN} WHERE p.programa_id=?", (pid,), one=True
     )['s'] if has_ipc else total_anr
 
+    # ── Subprogramas: CLIC vs RED CLIC (se distinguen por la columna linea) ──
+    def _sub_agg(linea_cond):
+        return dict(query(
+            f"SELECT COUNT(*) as n, "
+            f"COALESCE(SUM(n_inscriptos),0)  as inscriptos, "
+            f"COALESCE(SUM(n_iniciaron),0)   as iniciaron, "
+            f"COALESCE(SUM(n_finalizaron),0) as finalizaron "
+            f"FROM proyectos WHERE programa_id=? AND {linea_cond}",
+            (pid,), one=True
+        ))
+
+    clic_stats    = _sub_agg("UPPER(linea) = 'CLIC'")
+    redclic_stats = _sub_agg("UPPER(linea) LIKE 'RED CLIC%'")
+
+    total_inscriptos  = (clic_stats['inscriptos']  or 0) + (redclic_stats['inscriptos']  or 0)
+    total_iniciaron   = (clic_stats['iniciaron']   or 0) + (redclic_stats['iniciaron']   or 0)
+    total_finalizaron = (clic_stats['finalizaron'] or 0) + (redclic_stats['finalizaron'] or 0)
+
     estados_dist = query("SELECT estado, COUNT(*) as n FROM proyectos WHERE programa_id=? GROUP BY estado ORDER BY n DESC", (pid,))
 
     por_municipio = query(f"""
@@ -667,7 +685,7 @@ def _clic_detail(pid, programa, proyectos, hitos):
         GROUP BY p.area_tematica ORDER BY total_real DESC LIMIT 15
     """, (pid,))
 
-    # ANR real por proyecto
+    # ANR real por proyecto + etiqueta de subprograma
     real_expr = ipc_anr_expr(has_ipc, alias='p')
     real_per_proy = {r['id']: r['s'] for r in query(
         f"SELECT p.id, COALESCE({real_expr}, 0) as s FROM proyectos p {IPC_JOIN} WHERE p.programa_id=?",
@@ -677,6 +695,7 @@ def _clic_detail(pid, programa, proyectos, hitos):
     for p in proyectos:
         d = dict(p)
         d['anr_real'] = real_per_proy.get(d['id'], d.get('anr_monto') or 0)
+        d['subprograma'] = 'CLIC' if (d.get('linea') or '').upper() == 'CLIC' else 'RED CLIC'
         proyectos_enriched.append(d)
 
     # Avance por hito
@@ -710,4 +729,9 @@ def _clic_detail(pid, programa, proyectos, hitos):
         por_area=[dict(r) for r in por_area],
         avances_por_hito=avances_por_hito,
         novedades_recientes=[dict(r) for r in novedades_recientes],
+        clic_stats=clic_stats,
+        redclic_stats=redclic_stats,
+        total_inscriptos=total_inscriptos,
+        total_iniciaron=total_iniciaron,
+        total_finalizaron=total_finalizaron,
     )

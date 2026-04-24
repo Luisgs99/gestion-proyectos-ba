@@ -438,6 +438,7 @@ def init_db():
         ("n_iniciaron",           "INTEGER"),
         ("n_finalizaron",         "INTEGER"),
         ("fecha_puesta_marcha",   "DATE"),
+        ("anr_actualizado",       "REAL"),
     ]
     for col, tipo in nuevas_cols:
         if col not in existing_cols:
