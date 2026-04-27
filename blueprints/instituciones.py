@@ -8,6 +8,7 @@ from flask import (Blueprint, render_template, request, redirect,
                    url_for, session, flash, send_file, current_app, jsonify)
 from database import query, execute, get_db
 from helpers.auth import login_required, editor_required, can_edit
+from helpers.ipc import get_ipc_config
 
 bp = Blueprint('instituciones', __name__)
 
@@ -31,10 +32,56 @@ def list():
     tipo = request.args.get('tipo', '')
     estado = request.args.get('estado', '')
 
+    ipc_fecha_val, _ = get_ipc_config()
+
+    # Build IPC join for CLINICA (same pattern as adoptantes)
+    rule_clinica = query("""SELECT ic.* FROM ipc_config ic
+                            JOIN programas pg ON ic.programa_id = pg.id
+                            WHERE pg.codigo='CLINICA'""", one=True)
+    if rule_clinica:
+        campo = rule_clinica['campo_anio']
+        offset = rule_clinica['anio_offset']
+        mes = rule_clinica['mes_desembolso']
+        fecha_expr = (f"(CAST(p.{campo}+{offset} AS TEXT) || '-{mes}')"
+                      if offset else
+                      f"(CAST(p.{campo} AS TEXT) || '-{mes}')")
+        clinica_ipc_join = (
+            f" LEFT JOIN ponderadores_ipc ipc_c"
+            f" ON pr.codigo='CLINICA'"
+            f" AND ipc_c.fecha_desembolso=({fecha_expr})"
+            f" AND ipc_c.fecha_valuacion='{ipc_fecha_val}'"
+            f" AND p.{campo} IS NOT NULL"
+        )
+        anr_real_expr = (
+            "CASE WHEN pr.codigo='CLINICA'"
+            " THEN COALESCE(p.monto_diagnostico*COALESCE(ipc_c.ponderador,1),p.monto_diagnostico,0)"
+            " ELSE COALESCE(p.anr_actualizado,p.anr_monto,0) END"
+        )
+    else:
+        clinica_ipc_join = ""
+        anr_real_expr = "COALESCE(p.anr_actualizado,p.anr_monto,0)"
+
+    anr_nom_expr = (
+        "CASE WHEN pr.codigo='CLINICA' THEN COALESCE(p.monto_diagnostico,0)"
+        " ELSE COALESCE(p.anr_monto,0) END"
+    )
+
+    # All projects with ANR figures (for Python-side text matching)
+    proyectos_all = [dict(r) for r in query(f"""
+        SELECT p.id, p.beneficiario, p.ib2,
+               {anr_nom_expr} AS anr_nom,
+               {anr_real_expr} AS anr_real,
+               pr.codigo AS prog_codigo, pr.color AS prog_color
+        FROM proyectos p
+        JOIN programas pr ON p.programa_id = pr.id
+        {clinica_ipc_join}
+    """)]
+
+    # Main instituciones query — only contact/doc counts (no project join to avoid cartesian product)
     sql = """
         SELECT i.*,
-               COUNT(DISTINCT ic.id) as n_contactos,
-               COUNT(DISTINCT id2.id) as n_documentos
+               COUNT(DISTINCT ic.id) AS n_contactos,
+               COUNT(DISTINCT id2.id) AS n_documentos
         FROM instituciones i
         LEFT JOIN institucion_contactos ic ON ic.institucion_id = i.id AND ic.activo = 1
         LEFT JOIN institucion_documentos id2 ON id2.institucion_id = i.id
@@ -52,11 +99,65 @@ def list():
         params.append(estado)
     sql += " GROUP BY i.id ORDER BY i.nombre"
 
-    instituciones = query(sql, params)
+    instituciones_raw = query(sql, params)
+
+    # Enrich each institution with project stats via text matching (mirrors detail view logic)
+    instituciones = []
+    for inst in instituciones_raw:
+        d = dict(inst)
+        n_l  = (d['nombre'] or '').lower().strip()
+        nc_l = (d['nombre_corto'] or '').lower().strip()
+        nombres = {n for n in [n_l, nc_l] if len(n) >= 2}
+
+        n_proy = 0
+        tot_nom = 0.0
+        tot_real = 0.0
+        prog_set = set()
+        color_map = {}
+
+        for p in proyectos_all:
+            benef = (p['beneficiario'] or '').lower()
+            ib2   = (p['ib2'] or '').lower()
+            for n in nombres:
+                if n in benef or n in ib2:
+                    n_proy   += 1
+                    tot_nom  += p['anr_nom']  or 0
+                    tot_real += p['anr_real'] or 0
+                    prog_set.add(p['prog_codigo'])
+                    color_map[p['prog_codigo']] = p['prog_color']
+                    break
+
+        d['n_proyectos']    = n_proy
+        d['total_anr']      = tot_nom
+        d['total_anr_real'] = tot_real
+        d['programas'] = ','.join(sorted(prog_set))
+        d['colores']   = ','.join(color_map.get(c, '') for c in sorted(prog_set))
+        instituciones.append(d)
+
+    instituciones.sort(key=lambda x: (-x['n_proyectos'], (x['nombre'] or '').lower()))
+
+    con_proy = [i for i in instituciones if i['n_proyectos'] > 0]
+    kpi = {
+        'total':           len(instituciones),
+        'con_proyectos':   len(con_proy),
+        'total_proyectos': sum(i['n_proyectos'] for i in con_proy),
+        'total_anr':       sum(i['total_anr']      for i in con_proy),
+        'total_anr_real':  sum(i['total_anr_real'] for i in con_proy),
+    }
+
+    top_by_proyectos = sorted(con_proy, key=lambda x: -x['n_proyectos'])[:15]
+    top_by_anr_nom   = sorted(con_proy, key=lambda x: -x['total_anr'])[:15]
+    top_by_anr_real  = sorted(con_proy, key=lambda x: -x['total_anr_real'])[:15]
+
     return render_template('instituciones/list.html',
                            instituciones=instituciones,
                            tipos=TIPOS_INST, estados=ESTADOS_VINCULO,
-                           q=q, tipo=tipo, estado=estado)
+                           q=q, tipo=tipo, estado=estado,
+                           kpi=kpi,
+                           top_by_proyectos=top_by_proyectos,
+                           top_by_anr_nom=top_by_anr_nom,
+                           top_by_anr_real=top_by_anr_real,
+                           ipc_fecha_val=ipc_fecha_val)
 
 
 # ─── Detalle ──────────────────────────────────────────────────────────────────
@@ -88,23 +189,97 @@ def detail(iid):
         WHERE n.institucion_id = ? ORDER BY n.fecha DESC, n.created_at DESC
     """, (iid,))
 
+    # Build IPC expressions for real ANR (same pattern as list())
+    ipc_fecha_val, _ = get_ipc_config()
+    rule_clinica = query("""SELECT ic.* FROM ipc_config ic
+                            JOIN programas pg ON ic.programa_id = pg.id
+                            WHERE pg.codigo='CLINICA'""", one=True)
+    if rule_clinica:
+        campo  = rule_clinica['campo_anio']
+        offset = rule_clinica['anio_offset']
+        mes    = rule_clinica['mes_desembolso']
+        fecha_expr = (f"(CAST(p.{campo}+{offset} AS TEXT) || '-{mes}')"
+                      if offset else
+                      f"(CAST(p.{campo} AS TEXT) || '-{mes}')")
+        clinica_ipc_join = (
+            f" LEFT JOIN ponderadores_ipc ipc_c"
+            f" ON pr.codigo='CLINICA'"
+            f" AND ipc_c.fecha_desembolso=({fecha_expr})"
+            f" AND ipc_c.fecha_valuacion='{ipc_fecha_val}'"
+            f" AND p.{campo} IS NOT NULL"
+        )
+        anr_real_expr = (
+            "CASE WHEN pr.codigo='CLINICA'"
+            " THEN COALESCE(p.monto_diagnostico*COALESCE(ipc_c.ponderador,1),p.monto_diagnostico,0)"
+            " ELSE COALESCE(p.anr_actualizado,p.anr_monto,0) END"
+        )
+    else:
+        clinica_ipc_join = ""
+        anr_real_expr = "COALESCE(p.anr_actualizado,p.anr_monto,0)"
+
+    anr_nom_expr = (
+        "CASE WHEN pr.codigo='CLINICA' THEN COALESCE(p.monto_diagnostico,0)"
+        " ELSE COALESCE(p.anr_monto,0) END"
+    )
+
     # Proyectos vinculados (por nombre_corto o nombre en beneficiario / ib2)
     terminos = [inst['nombre']]
     if inst['nombre_corto']:
         terminos.append(inst['nombre_corto'])
     proyectos_vinculados = []
+    seen_ids = set()
     for t in terminos:
-        rows = query("""
-            SELECT p.id, p.nombre, p.codigo, p.estado, p.anr_monto, p.anio,
-                   pr.nombre as prog_nombre, pr.codigo as prog_codigo, pr.color as prog_color
+        rows = query(f"""
+            SELECT p.id, p.nombre, p.codigo, p.estado, p.anio,
+                   {anr_nom_expr}  AS anr_nom,
+                   {anr_real_expr} AS anr_real,
+                   pr.nombre AS prog_nombre, pr.codigo AS prog_codigo, pr.color AS prog_color
             FROM proyectos p
             JOIN programas pr ON p.programa_id = pr.id
+            {clinica_ipc_join}
             WHERE p.beneficiario LIKE ? OR p.ib2 LIKE ?
-            ORDER BY p.nombre
+            ORDER BY p.anio IS NULL, p.anio DESC, p.nombre
         """, (f'%{t}%', f'%{t}%'))
         for r in rows:
-            if not any(x['id'] == r['id'] for x in proyectos_vinculados):
-                proyectos_vinculados.append(r)
+            if r['id'] not in seen_ids:
+                proyectos_vinculados.append(dict(r))
+                seen_ids.add(r['id'])
+
+    # Aggregates for proyectos-tab charts
+    by_programa = {}
+    by_anio     = {}
+    by_estado   = {}
+    for p in proyectos_vinculados:
+        cod  = p['prog_codigo']
+        anio = str(p['anio']) if p['anio'] else 'S/D'
+        est  = p['estado'] or 'sin_estado'
+        nom  = float(p['anr_nom']  or 0)
+        real = float(p['anr_real'] or 0)
+
+        if cod not in by_programa:
+            by_programa[cod] = {'codigo': cod, 'color': p['prog_color'],
+                                'n': 0, 'anr_nom': 0.0, 'anr_real': 0.0}
+        by_programa[cod]['n']        += 1
+        by_programa[cod]['anr_nom']  += nom
+        by_programa[cod]['anr_real'] += real
+
+        if anio not in by_anio:
+            by_anio[anio] = {'anio': anio, 'n': 0, 'anr_nom': 0.0, 'anr_real': 0.0}
+        by_anio[anio]['n']        += 1
+        by_anio[anio]['anr_nom']  += nom
+        by_anio[anio]['anr_real'] += real
+
+        if est not in by_estado:
+            by_estado[est] = {'estado': est, 'n': 0}
+        by_estado[est]['n'] += 1
+
+    kpi_proy = {
+        'total':          len(proyectos_vinculados),
+        'total_anr_nom':  sum(float(p['anr_nom']  or 0) for p in proyectos_vinculados),
+        'total_anr_real': sum(float(p['anr_real'] or 0) for p in proyectos_vinculados),
+        'n_programas':    len(by_programa),
+        'n_anios':        len(by_anio),
+    }
 
     tab = request.args.get('tab', 'info')
     return render_template('instituciones/detail.html',
@@ -112,7 +287,12 @@ def detail(iid):
                            documentos=documentos, novedades=novedades,
                            proyectos_vinculados=proyectos_vinculados,
                            tipos_doc=TIPOS_DOC, tipos_novedad=TIPOS_NOVEDAD,
-                           tab=tab)
+                           tab=tab,
+                           kpi_proy=kpi_proy,
+                           by_programa=list(by_programa.values()),
+                           by_anio=sorted(by_anio.values(), key=lambda x: x['anio']),
+                           by_estado=list(by_estado.values()),
+                           ipc_fecha_val=ipc_fecha_val)
 
 
 # ─── Alta / Edición ───────────────────────────────────────────────────────────
@@ -257,6 +437,32 @@ def sync_fitba():
                     (nombre, 'universidad', 'activo'))
             nuevas += 1
     flash(f'Sincronización completada: {nuevas} instituciones nuevas, {existentes} ya registradas.', 'success')
+    return redirect(url_for('instituciones.list'))
+
+
+@bp.route('/instituciones/sync-proyectos', methods=['POST'])
+@editor_required
+def sync_proyectos():
+    rows = query("""
+        SELECT DISTINCT beneficiario AS nombre FROM proyectos
+        WHERE beneficiario IS NOT NULL AND TRIM(beneficiario) NOT IN ('', '-')
+        UNION
+        SELECT DISTINCT ib2 AS nombre FROM proyectos
+        WHERE ib2 IS NOT NULL AND TRIM(ib2) NOT IN ('', '-')
+        ORDER BY nombre
+    """)
+    nuevas, existentes = 0, 0
+    for r in rows:
+        nombre = (r['nombre'] or '').strip()
+        if not nombre:
+            continue
+        if query("SELECT id FROM instituciones WHERE nombre=?", (nombre,), one=True):
+            existentes += 1
+        else:
+            execute("INSERT INTO instituciones (nombre, tipo, estado_vinculo) VALUES (?,?,?)",
+                    (nombre, 'universidad', 'activo'))
+            nuevas += 1
+    flash(f'Sincronización completada: {nuevas} instituciones nuevas importadas, {existentes} ya registradas.', 'success')
     return redirect(url_for('instituciones.list'))
 
 

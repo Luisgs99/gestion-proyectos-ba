@@ -16,7 +16,8 @@
       "WebFetch(domain:docs.google.com)",
       "WebFetch(domain:doc-14-10-sheets.googleusercontent.com)",
       "Bash(sqlite3 proyectos_ba.db \"SELECT id FROM programas WHERE codigo='CLINICA';\")",
-      "Bash(py -c ' *)"
+      "Bash(py -c ' *)",
+      "Bash(sqlite3 proyectos_ba.db \"SELECT id, nombre, ib2, codigo FROM proyectos WHERE nombre LIKE '%Nuevos materiales%';\")"
     ]
   }
 }

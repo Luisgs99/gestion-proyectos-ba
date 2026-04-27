@@ -347,14 +347,25 @@ def _orbita_detail(pid, programa, proyectos, hitos):
     """, (pid,))
 
     por_anio = query(f"""
-        SELECT p.anio_redaccion as anio_red, p.anio_publicacion,
+        SELECT p.anio_redaccion as anio_red,
                COUNT(*) as n,
-               SUM(CASE WHEN p.situacion_clinica='Publicado' THEN 1 ELSE 0 END) as publicados,
                COALESCE(SUM(p.anr_monto),0) as total_anr,
                COALESCE(SUM({real_expr}),0) as total_real
         FROM proyectos p {IPC_JOIN}
         WHERE p.programa_id=? AND p.anio_redaccion IS NOT NULL
         GROUP BY p.anio_redaccion ORDER BY p.anio_redaccion
+    """, (pid,))
+
+    # Publicados por año de publicación (eje independiente del año de redacción)
+    por_anio_pub = query(f"""
+        SELECT p.anio_publicacion as anio_pub,
+               COUNT(*) as publicados,
+               COALESCE(SUM(p.anr_monto),0) as total_anr,
+               COALESCE(SUM({real_expr}),0) as total_real
+        FROM proyectos p {IPC_JOIN}
+        WHERE p.programa_id=? AND p.situacion_clinica='Publicado'
+          AND p.anio_publicacion IS NOT NULL
+        GROUP BY p.anio_publicacion ORDER BY p.anio_publicacion
     """, (pid,))
 
     real_per_proy = {}
@@ -372,6 +383,23 @@ def _orbita_detail(pid, programa, proyectos, hitos):
         d['anr_real'] = real_per_proy.get(p['id'], p['anr_monto'] or 0)
         proyectos_enrich.append(d)
 
+    # Agrupar documentos que comparten título (distintas IBs para el mismo documento)
+    _grupos_map = {}   # nombre → lista de docs, en orden de aparición
+    for p in proyectos_enrich:
+        _grupos_map.setdefault(p['nombre'], []).append(p)
+
+    grupos_list = []
+    for nombre, docs in _grupos_map.items():
+        grupos_list.append({
+            'nombre':        nombre,
+            'docs':          docs,
+            'multi':         len(docs) > 1,
+            'linea':         docs[0].get('linea'),
+            'anio_redaccion': docs[0].get('anio_redaccion'),
+            'total_anr':     sum((d.get('anr_monto') or 0) for d in docs),
+            'total_anr_real': sum((d.get('anr_real') or 0) for d in docs),
+        })
+
     return render_template('programs/orbita_dashboard.html',
         programa=programa, proyectos=proyectos_enrich, hitos=hitos,
         total=total, publicados=publicados, en_proceso=en_proceso,
@@ -381,6 +409,8 @@ def _orbita_detail(pid, programa, proyectos, hitos):
         por_linea=[dict(r) for r in por_linea],
         por_ib=[dict(r) for r in por_ib],
         por_anio=[dict(r) for r in por_anio],
+        por_anio_pub=[dict(r) for r in por_anio_pub],
+        grupos_list=grupos_list,
     )
 
 
@@ -635,11 +665,14 @@ def _clic_detail(pid, programa, proyectos, hitos):
 
     # ── Subprogramas: CLIC vs RED CLIC (se distinguen por la columna linea) ──
     def _sub_agg(linea_cond):
+        # inscriptos/iniciaron/finalizaron solo para proyectos con n_inscriptos cargado,
+        # para que el total de iniciaron nunca supere al de inscriptos por datos faltantes.
         return dict(query(
             f"SELECT COUNT(*) as n, "
-            f"COALESCE(SUM(n_inscriptos),0)  as inscriptos, "
-            f"COALESCE(SUM(n_iniciaron),0)   as iniciaron, "
-            f"COALESCE(SUM(n_finalizaron),0) as finalizaron "
+            f"COALESCE(SUM(n_inscriptos), 0) as inscriptos, "
+            f"COALESCE(SUM(CASE WHEN n_inscriptos IS NOT NULL THEN COALESCE(n_iniciaron, 0)   END), 0) as iniciaron, "
+            f"COALESCE(SUM(CASE WHEN n_inscriptos IS NOT NULL THEN COALESCE(n_finalizaron, 0) END), 0) as finalizaron, "
+            f"SUM(CASE WHEN n_inscriptos IS NULL THEN 1 ELSE 0 END) as sin_inscriptos "
             f"FROM proyectos WHERE programa_id=? AND {linea_cond}",
             (pid,), one=True
         ))

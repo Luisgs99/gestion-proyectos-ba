@@ -2,6 +2,11 @@
 {% block title %}Instituciones{% endblock %}
 {% block breadcrumb %}Instituciones{% endblock %}
 
+{% macro fmt_anr(v) -%}
+{%- set v = (v or 0)|float -%}
+{%- if v >= 1000000 -%}{{ "$%.1f M"|format(v/1e6) }}{%- elif v >= 1000 -%}{{ "$%.0f k"|format(v/1e3) }}{%- else -%}${{ v|int }}{%- endif -%}
+{%- endmacro %}
+
 {% block topbar_actions %}
   {% if can_edit() %}
   <a href="{{ url_for('instituciones.nueva') }}" class="btn btn-primary btn-sm">
@@ -10,17 +15,71 @@
   <button onclick="document.getElementById('modal-import').style.display='flex'" class="btn btn-secondary btn-sm">
     <span class="material-icons-round">upload_file</span> Importar Excel
   </button>
-  <form method="post" action="{{ url_for('instituciones.sync_fitba') }}" style="display:inline;"
-        onsubmit="return confirm('Esto va a crear una entrada por cada institución beneficiaria de FITBA que todavía no esté registrada. ¿Continuar?')">
+  <form method="post" action="{{ url_for('instituciones.sync_proyectos') }}" style="display:inline;"
+        onsubmit="return confirm('Crear una entrada para cada IB encontrada en proyectos que aún no esté registrada. ¿Continuar?')">
     <button type="submit" class="btn btn-secondary btn-sm">
-      <span class="material-icons-round">sync</span> Sync FITBA
+      <span class="material-icons-round">sync</span> Sync IBs
     </button>
   </form>
   {% endif %}
 {% endblock %}
 
 {% block content %}
-<!-- Filtros -->
+<!-- ANR switch -->
+<div style="display:flex;justify-content:flex-end;align-items:center;gap:6px;margin-bottom:12px;">
+  <span style="font-size:12px;color:var(--text-muted);">ANR:</span>
+  <button id="anr-nominal-btn" class="tab-btn active" onclick="setAnrMode('nominal')" style="font-size:11px;padding:3px 10px;">Nominal</button>
+  <button id="anr-real-btn" class="tab-btn" onclick="setAnrMode('real')" style="font-size:11px;padding:3px 10px;">Real <span style="font-size:10px;color:var(--text-muted);">({{ ipc_fecha_val }})</span></button>
+</div>
+
+<!-- KPI cards -->
+<div class="grid-4 mb-3">
+  <div class="card card-body" style="text-align:center;">
+    <div style="font-size:28px;font-weight:700;color:var(--blue);">{{ kpi.total }}</div>
+    <div class="text-sm text-muted">IBs registradas</div>
+  </div>
+  <div class="card card-body" style="text-align:center;">
+    <div style="font-size:28px;font-weight:700;color:var(--green);">{{ kpi.con_proyectos }}</div>
+    <div class="text-sm text-muted">IBs con proyectos</div>
+  </div>
+  <div class="card card-body" style="text-align:center;">
+    <div style="font-size:28px;font-weight:700;color:var(--blue);">{{ kpi.total_proyectos }}</div>
+    <div class="text-sm text-muted">Proyectos vinculados</div>
+  </div>
+  <div class="card card-body" style="text-align:center;">
+    <div id="kpi-anr"
+         data-nominal="{{ kpi.total_anr|int }}"
+         data-real="{{ kpi.total_anr_real|int }}"
+         style="font-size:22px;font-weight:700;color:var(--orange);">{{ fmt_anr(kpi.total_anr) }}</div>
+    <div class="text-sm text-muted">ANR total <span id="kpi-anr-label" style="font-size:10px;">(nominal)</span></div>
+  </div>
+</div>
+
+{% if kpi.con_proyectos > 0 %}
+<!-- Charts -->
+<div class="grid-2 mb-3">
+  <div class="card card-body">
+    <div style="font-size:13px;font-weight:600;color:var(--text-muted);margin-bottom:8px;">
+      <span class="material-icons-round" style="font-size:14px;vertical-align:middle;">bar_chart</span>
+      Top IBs por proyectos
+    </div>
+    <div style="position:relative;height:280px;">
+      <canvas id="chart-proyectos"></canvas>
+    </div>
+  </div>
+  <div class="card card-body">
+    <div style="font-size:13px;font-weight:600;color:var(--text-muted);margin-bottom:8px;">
+      <span class="material-icons-round" style="font-size:14px;vertical-align:middle;">payments</span>
+      Top IBs por ANR <span id="chart-anr-mode-label" style="font-size:10px;">(nominal)</span>
+    </div>
+    <div style="position:relative;height:280px;">
+      <canvas id="chart-anr"></canvas>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Filters -->
 <form method="get" class="card card-body mb-3" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
   <div style="flex:1;min-width:180px;">
     <label class="form-label">Buscar</label>
@@ -40,85 +99,93 @@
       {% for e in estados %}<option value="{{ e }}" {% if estado==e %}selected{% endif %}>{{ e|replace('_',' ')|capitalize }}</option>{% endfor %}
     </select>
   </div>
-  <div>
+  <div style="display:flex;gap:6px;align-items:flex-end;">
     <button type="submit" class="btn btn-primary">Filtrar</button>
     {% if q or tipo or estado %}<a href="{{ url_for('instituciones.list') }}" class="btn btn-secondary">Limpiar</a>{% endif %}
   </div>
 </form>
 
-<!-- Resumen rápido -->
-<div class="grid-4 mb-3">
-  <div class="card card-body" style="text-align:center;">
-    <div style="font-size:28px;font-weight:700;color:var(--blue);">{{ instituciones|length }}</div>
-    <div class="text-sm text-muted">Total</div>
-  </div>
-  <div class="card card-body" style="text-align:center;">
-    <div style="font-size:28px;font-weight:700;color:var(--green);">{{ instituciones|selectattr('estado_vinculo','eq','activo')|list|length }}</div>
-    <div class="text-sm text-muted">Vínculo activo</div>
-  </div>
-  <div class="card card-body" style="text-align:center;">
-    <div style="font-size:28px;font-weight:700;color:var(--orange);">{{ instituciones|selectattr('estado_vinculo','eq','en_gestion')|list|length }}</div>
-    <div class="text-sm text-muted">En gestión</div>
-  </div>
-  <div class="card card-body" style="text-align:center;">
-    <div style="font-size:28px;font-weight:700;color:var(--text-muted);">{{ instituciones|selectattr('estado_vinculo','eq','inactivo')|list|length }}</div>
-    <div class="text-sm text-muted">Inactivas</div>
-  </div>
-</div>
-
-<!-- Tabla -->
+<!-- Table -->
 <div class="card">
-  <div class="card-header">
+  <div class="card-header" style="flex-wrap:wrap;gap:8px;">
     <span>Instituciones ({{ instituciones|length }})</span>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:6px;">
+      <span class="material-icons-round" style="font-size:15px;color:var(--text-muted);">search</span>
+      <input id="ib-search" type="text" class="form-control" placeholder="Filtrar en tabla…"
+             style="width:220px;padding:4px 10px;font-size:13px;"
+             oninput="applyFilters()">
+    </div>
   </div>
+
   {% if instituciones %}
-  <table class="table">
-    <thead>
-      <tr>
-        <th>Institución</th>
-        <th>Tipo</th>
-        <th>Municipio</th>
-        <th>Vínculo</th>
-        <th style="text-align:center;">Contactos</th>
-        <th style="text-align:center;">Docs</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for i in instituciones %}
-      <tr>
-        <td>
-          <a href="{{ url_for('instituciones.detail', iid=i.id) }}" style="font-weight:600;color:var(--blue);text-decoration:none;">
-            {{ i.nombre }}
-          </a>
-          {% if i.nombre_corto %}<span class="badge" style="font-size:10px;margin-left:4px;background:var(--bg-hover);">{{ i.nombre_corto }}</span>{% endif %}
-        </td>
-        <td><span class="badge badge-outline" style="font-size:11px;">{{ i.tipo }}</span></td>
-        <td class="text-sm">{{ i.municipio or '—' }}</td>
-        <td>
-          <span class="badge badge-{{ i.estado_vinculo }}" style="font-size:11px;">{{ i.estado_vinculo|replace('_',' ') }}</span>
-        </td>
-        <td style="text-align:center;font-size:13px;">{{ i.n_contactos }}</td>
-        <td style="text-align:center;font-size:13px;">{{ i.n_documentos }}</td>
-        <td>
-          <a href="{{ url_for('instituciones.detail', iid=i.id) }}" class="btn btn-secondary btn-sm">Ver</a>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <div style="overflow-x:auto;">
+    <table class="table" id="ib-table">
+      <thead>
+        <tr>
+          <th data-col="nombre"    onclick="sortTable(this)" style="cursor:pointer;user-select:none;">Institución <span class="sort-icon" style="color:var(--text-muted);font-size:11px;">↕</span></th>
+          <th data-col="tipo"      onclick="sortTable(this)" style="cursor:pointer;user-select:none;">Tipo <span class="sort-icon" style="color:var(--text-muted);font-size:11px;">↕</span></th>
+          <th data-col="municipio" onclick="sortTable(this)" style="cursor:pointer;user-select:none;">Municipio <span class="sort-icon" style="color:var(--text-muted);font-size:11px;">↕</span></th>
+          <th data-col="vinculo"   onclick="sortTable(this)" style="cursor:pointer;user-select:none;">Vínculo <span class="sort-icon" style="color:var(--text-muted);font-size:11px;">↕</span></th>
+          <th>Programas</th>
+          <th data-col="proyectos" onclick="sortTable(this)" style="text-align:right;cursor:pointer;user-select:none;">Proyectos <span class="sort-icon" style="color:var(--text-muted);font-size:11px;">↓</span></th>
+          <th data-col="anr"       onclick="sortTable(this)" style="text-align:right;cursor:pointer;user-select:none;">ANR <span class="sort-icon" style="color:var(--text-muted);font-size:11px;">↕</span></th>
+          <th style="text-align:center;">Contactos</th>
+          <th style="text-align:center;">Docs</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for i in instituciones %}
+        {% set prog_list  = (i.programas or '').split(',') %}
+        {% set color_list = (i.colores   or '').split(',') %}
+        <tr data-search="{{ (i.nombre or '') ~ ' ' ~ (i.nombre_corto or '') ~ ' ' ~ (i.municipio or '') ~ ' ' ~ (i.tipo or '') ~ ' ' ~ (i.programas or '') }}"
+            data-proyectos="{{ i.n_proyectos }}">
+          <td style="max-width:280px;">
+            <a href="{{ url_for('instituciones.detail', iid=i.id) }}" style="font-weight:600;color:var(--blue);text-decoration:none;">{{ i.nombre }}</a>
+            {% if i.nombre_corto %}<span class="badge" style="font-size:10px;margin-left:4px;background:var(--bg-hover);">{{ i.nombre_corto }}</span>{% endif %}
+          </td>
+          <td><span class="badge badge-outline" style="font-size:11px;">{{ i.tipo }}</span></td>
+          <td class="text-sm">{{ i.municipio or '—' }}</td>
+          <td><span class="badge badge-{{ i.estado_vinculo }}" style="font-size:11px;">{{ i.estado_vinculo|replace('_',' ') }}</span></td>
+          <td>
+            {% for j in range(prog_list|length) %}
+            {% if prog_list[j] %}
+            <span class="badge" style="background:{{ color_list[j] if j < color_list|length else '#666' }};color:#fff;font-size:10px;">{{ prog_list[j] }}</span>
+            {% endif %}
+            {% endfor %}
+          </td>
+          <td style="text-align:right;font-weight:{% if i.n_proyectos > 0 %}600{% else %}400{% endif %};">
+            {% if i.n_proyectos > 0 %}{{ i.n_proyectos }}{% else %}<span style="color:var(--text-muted);">—</span>{% endif %}
+          </td>
+          <td style="text-align:right;font-family:monospace;font-size:13px;" class="anr-cell"
+              data-anr="{{ i.total_anr|int }}"
+              data-anr-real="{{ i.total_anr_real|int }}">
+            {% if i.total_anr > 0 %}{{ fmt_anr(i.total_anr) }}{% else %}<span style="color:var(--text-muted);">—</span>{% endif %}
+          </td>
+          <td style="text-align:center;font-size:13px;">{{ i.n_contactos if i.n_contactos else '—' }}</td>
+          <td style="text-align:center;font-size:13px;">{{ i.n_documentos if i.n_documentos else '—' }}</td>
+          <td><a href="{{ url_for('instituciones.detail', iid=i.id) }}" class="btn btn-secondary btn-sm">Ver</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
   {% else %}
   <div class="card-body" style="text-align:center;padding:40px;color:var(--text-muted);">
     <span class="material-icons-round" style="font-size:48px;display:block;margin-bottom:8px;">account_balance</span>
     No hay instituciones registradas.
     {% if can_edit() %}
-    Podés <a href="{{ url_for('instituciones.nueva') }}">crear una manualmente</a> o usar <strong>Sync FITBA</strong> para importarlas desde los proyectos.
+    Podés <a href="{{ url_for('instituciones.nueva') }}">crear una manualmente</a>, usar <strong>Importar Excel</strong> o <strong>Sync IBs</strong> para importarlas desde los proyectos.
     {% endif %}
   </div>
   {% endif %}
+
+  <div style="padding:8px 20px;border-top:1px solid var(--border);font-size:12px;color:var(--text-muted);">
+    <span id="ib-count"></span>
+  </div>
 </div>
 
-<!-- Modal importar Excel -->
+<!-- Import modal -->
 <div id="modal-import" class="modal-overlay" style="display:none;" onclick="if(event.target===this)this.style.display='none'">
   <div class="modal" onclick="event.stopPropagation()">
     <div class="modal-header">
@@ -144,4 +211,157 @@
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  // ── Server data ───────────────────────────────────────────────────────────────
+  const topPorProyectos = {{ top_by_proyectos | tojson }};
+  const topPorAnrNom    = {{ top_by_anr_nom   | tojson }};
+  const topPorAnrReal   = {{ top_by_anr_real  | tojson }};
+  const ipcFecha        = '{{ ipc_fecha_val }}';
+
+  // ── Helpers ───────────────────────────────────────────────────────────────────
+  function fmtAnr(v) {
+    v = parseFloat(v) || 0;
+    if (v >= 1e6) return '$' + (v / 1e6).toFixed(1) + ' M';
+    if (v >= 1e3) return '$' + Math.round(v / 1e3) + ' k';
+    return '$' + Math.round(v);
+  }
+
+  function ibLabel(inst) {
+    const n = inst.nombre_corto || inst.nombre || '';
+    return n.length > 24 ? n.substr(0, 24) + '…' : n;
+  }
+
+  function makeBarChart(canvasId, labels, values, color, xFmt) {
+    const ctx = document.getElementById(canvasId);
+    if (!ctx) return null;
+    return new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: [{ data: values, backgroundColor: color, borderRadius: 3 }]
+      },
+      options: {
+        indexAxis: 'y',
+        plugins: {
+          legend: { display: false },
+          tooltip: xFmt ? { callbacks: { label: c => xFmt(c.raw) } } : {}
+        },
+        scales: {
+          x: {
+            ticks: { font: { size: 11 }, callback: xFmt || undefined },
+            grid: { color: '#eee' }
+          },
+          y: { ticks: { font: { size: 11 } } }
+        },
+        responsive: true,
+        maintainAspectRatio: false
+      }
+    });
+  }
+
+  // ── Charts ────────────────────────────────────────────────────────────────────
+  makeBarChart(
+    'chart-proyectos',
+    topPorProyectos.map(ibLabel),
+    topPorProyectos.map(i => i.n_proyectos),
+    '#1565C0bb',
+    null
+  );
+
+  let chartAnr = makeBarChart(
+    'chart-anr',
+    topPorAnrNom.map(ibLabel),
+    topPorAnrNom.map(i => i.total_anr),
+    '#E65100bb',
+    fmtAnr
+  );
+
+  // ── ANR switch ────────────────────────────────────────────────────────────────
+  let anrMode = 'nominal';
+
+  window.setAnrMode = function (mode) {
+    anrMode = mode;
+    document.getElementById('anr-nominal-btn').classList.toggle('active', mode === 'nominal');
+    document.getElementById('anr-real-btn').classList.toggle('active', mode === 'real');
+
+    const kpiEl = document.getElementById('kpi-anr');
+    if (kpiEl) kpiEl.textContent = fmtAnr(parseInt(mode === 'real' ? kpiEl.dataset.real : kpiEl.dataset.nominal) || 0);
+    const kpiLbl = document.getElementById('kpi-anr-label');
+    if (kpiLbl) kpiLbl.textContent = mode === 'nominal' ? '(nominal)' : '(real ' + ipcFecha + ')';
+    const chartLbl = document.getElementById('chart-anr-mode-label');
+    if (chartLbl) chartLbl.textContent = mode === 'nominal' ? '(nominal)' : '(real ' + ipcFecha + ')';
+
+    document.querySelectorAll('.anr-cell').forEach(function (cell) {
+      const v = parseInt(mode === 'real' ? cell.dataset.anrReal : cell.dataset.anr) || 0;
+      cell.textContent = v > 0 ? fmtAnr(v) : '—';
+    });
+
+    if (chartAnr) {
+      const data = mode === 'real' ? topPorAnrReal : topPorAnrNom;
+      const key  = mode === 'real' ? 'total_anr_real' : 'total_anr';
+      chartAnr.data.labels = data.map(ibLabel);
+      chartAnr.data.datasets[0].data = data.map(i => i[key]);
+      chartAnr.update();
+    }
+  };
+
+  // ── Table filter + sort ───────────────────────────────────────────────────────
+  const rows    = Array.from(document.querySelectorAll('#ib-table tbody tr'));
+  const tbody   = document.querySelector('#ib-table tbody');
+  const countEl = document.getElementById('ib-count');
+  let sortState = { col: 'proyectos', dir: -1 };
+
+  function updateCount() {
+    const vis = rows.filter(r => r.style.display !== 'none').length;
+    countEl.textContent = vis === rows.length
+      ? rows.length + ' registros'
+      : vis + ' de ' + rows.length + ' registros';
+  }
+
+  window.applyFilters = function () {
+    const term = (document.getElementById('ib-search')?.value || '').toLowerCase().trim();
+    rows.forEach(function (r) {
+      r.style.display = !term || (r.dataset.search || '').toLowerCase().includes(term) ? '' : 'none';
+    });
+    updateCount();
+  };
+
+  window.sortTable = function (th) {
+    const col = th.dataset.col;
+    if (!col) return;
+    sortState.dir = sortState.col === col ? -sortState.dir : -1;
+    sortState.col = col;
+
+    document.querySelectorAll('#ib-table th').forEach(function (h) {
+      const ico = h.querySelector('.sort-icon');
+      if (ico) ico.textContent = h === th ? (sortState.dir === -1 ? '↓' : '↑') : '↕';
+    });
+
+    rows.sort(function (a, b) {
+      if (col === 'proyectos') {
+        return sortState.dir * (parseInt(a.dataset.proyectos || 0) - parseInt(b.dataset.proyectos || 0));
+      }
+      if (col === 'anr') {
+        const k = anrMode === 'real' ? 'anrReal' : 'anr';
+        return sortState.dir * (
+          (parseInt(a.querySelector('.anr-cell')?.dataset[k] || 0)) -
+          (parseInt(b.querySelector('.anr-cell')?.dataset[k] || 0))
+        );
+      }
+      const idx = th.cellIndex;
+      const aT = (a.cells[idx]?.textContent || '').trim();
+      const bT = (b.cells[idx]?.textContent || '').trim();
+      return sortState.dir * aT.localeCompare(bT, 'es');
+    });
+
+    rows.forEach(r => tbody.appendChild(r));
+  };
+
+  updateCount();
+})();
+</script>
 {% endblock %}

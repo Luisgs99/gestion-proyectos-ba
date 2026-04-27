@@ -1,5 +1,10 @@
 {% extends "base.html" %}
 {% block title %}{{ inst.nombre }}{% endblock %}
+
+{% macro fmt_anr(v) -%}
+{%- set v = (v or 0)|float -%}
+{%- if v >= 1000000 -%}{{ "$%.1f M"|format(v/1e6) }}{%- elif v >= 1000 -%}{{ "$%.0f k"|format(v/1e3) }}{%- else -%}${{ v|int }}{%- endif -%}
+{%- endmacro %}
 {% block breadcrumb %}
   <a href="{{ url_for('instituciones.list') }}" style="color:var(--text-muted);text-decoration:none;">Instituciones</a>
   / {{ inst.nombre_corto or inst.nombre }}
@@ -349,42 +354,121 @@
 {# ═══════════════════════════════ TAB PROYECTOS ═══════════════════════════ #}
 {% elif tab == 'proyectos' %}
 {% if proyectos_vinculados %}
+
+<!-- ANR switch -->
+<div style="display:flex;justify-content:flex-end;align-items:center;gap:6px;margin-bottom:12px;">
+  <span style="font-size:12px;color:var(--text-muted);">ANR:</span>
+  <button id="anr-nom-btn" class="tab-btn active" onclick="setAnrMode('nominal')" style="font-size:11px;padding:3px 10px;">Nominal</button>
+  <button id="anr-real-btn" class="tab-btn" onclick="setAnrMode('real')" style="font-size:11px;padding:3px 10px;">Real <span style="font-size:10px;opacity:.7;">({{ ipc_fecha_val }})</span></button>
+</div>
+
+<!-- KPI mini-cards -->
+<div class="grid-4 mb-3">
+  <div class="card card-body" style="text-align:center;padding:14px;">
+    <div style="font-size:26px;font-weight:700;color:var(--blue);">{{ kpi_proy.total }}</div>
+    <div class="text-sm text-muted">Proyectos</div>
+  </div>
+  <div class="card card-body" style="text-align:center;padding:14px;">
+    <div id="kpi-anr-total"
+         data-nom="{{ kpi_proy.total_anr_nom|int }}"
+         data-real="{{ kpi_proy.total_anr_real|int }}"
+         style="font-size:20px;font-weight:700;color:var(--orange);">{{ fmt_anr(kpi_proy.total_anr_nom) }}</div>
+    <div class="text-sm text-muted">ANR total <span id="kpi-anr-lbl" style="font-size:10px;">(nominal)</span></div>
+  </div>
+  <div class="card card-body" style="text-align:center;padding:14px;">
+    <div style="font-size:26px;font-weight:700;color:var(--green);">{{ kpi_proy.n_programas }}</div>
+    <div class="text-sm text-muted">Programa{{ 's' if kpi_proy.n_programas != 1 }}</div>
+  </div>
+  <div class="card card-body" style="text-align:center;padding:14px;">
+    <div style="font-size:26px;font-weight:700;color:var(--blue);">{{ kpi_proy.n_anios }}</div>
+    <div class="text-sm text-muted">Convocatoria{{ 's' if kpi_proy.n_anios != 1 }}</div>
+  </div>
+</div>
+
+<!-- Charts: por programa -->
+<div class="grid-2 mb-3">
+  <div class="card card-body">
+    <div style="font-size:13px;font-weight:600;color:var(--text-muted);margin-bottom:8px;">
+      <span class="material-icons-round" style="font-size:14px;vertical-align:middle;">bar_chart</span>
+      Proyectos por programa
+    </div>
+    <div style="position:relative;height:{{ [kpi_proy.n_programas * 52 + 20, 160]|max }}px;">
+      <canvas id="chart-prog-n"></canvas>
+    </div>
+  </div>
+  <div class="card card-body">
+    <div style="font-size:13px;font-weight:600;color:var(--text-muted);margin-bottom:8px;">
+      <span class="material-icons-round" style="font-size:14px;vertical-align:middle;">payments</span>
+      ANR por programa <span id="chart-anr-mode" style="font-size:10px;">(nominal)</span>
+    </div>
+    <div style="position:relative;height:{{ [kpi_proy.n_programas * 52 + 20, 160]|max }}px;">
+      <canvas id="chart-prog-anr"></canvas>
+    </div>
+  </div>
+</div>
+
+{% if kpi_proy.n_anios >= 2 %}
+<!-- Chart: por convocatoria -->
+<div class="card card-body mb-3">
+  <div style="font-size:13px;font-weight:600;color:var(--text-muted);margin-bottom:8px;">
+    <span class="material-icons-round" style="font-size:14px;vertical-align:middle;">event</span>
+    Proyectos por convocatoria
+  </div>
+  <div style="position:relative;height:180px;">
+    <canvas id="chart-anio"></canvas>
+  </div>
+</div>
+{% endif %}
+
+<!-- Estado pills -->
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+  {% for e in by_estado|sort(attribute='n', reverse=true) %}
+  <div style="display:flex;align-items:center;gap:6px;background:var(--bg-hover);border-radius:8px;padding:7px 12px;">
+    <span class="badge badge-{{ e.estado }}" style="font-size:11px;">{{ e.estado|replace('_',' ') }}</span>
+    <span style="font-size:13px;font-weight:600;">{{ e.n }}</span>
+    <span class="text-muted text-sm">proy.</span>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Table -->
 <div class="card">
   <div class="card-header">Proyectos vinculados ({{ proyectos_vinculados|length }})</div>
-  <table class="table">
-    <thead>
-      <tr>
-        <th>Proyecto</th>
-        <th>Programa</th>
-        <th>Año</th>
-        <th>Estado</th>
-        <th>ANR</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for p in proyectos_vinculados %}
-      <tr>
-        <td>
-          <a href="{{ url_for('proyectos.detail', pid=p.id) }}" style="font-weight:500;color:var(--blue);text-decoration:none;">
-            {{ p.nombre }}
-          </a>
-          {% if p.codigo %}<div style="font-size:11px;color:var(--text-muted);font-family:monospace;">{{ p.codigo }}</div>{% endif %}
-        </td>
-        <td>
-          <span class="badge" style="background:{{ p.prog_color }}22;color:{{ p.prog_color }};font-size:11px;">{{ p.prog_codigo }}</span>
-        </td>
-        <td class="text-sm">{{ p.anio or '—' }}</td>
-        <td><span class="badge badge-{{ p.estado }}" style="font-size:11px;">{{ p.estado|replace('_',' ') }}</span></td>
-        <td class="text-sm">
-          {% if p.anr_monto %}
-          <span class="anr-value" data-value="{{ p.anr_monto }}">—</span>
-          {% else %}—{% endif %}
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <div style="overflow-x:auto;">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Proyecto</th>
+          <th>Programa</th>
+          <th style="text-align:center;">Año</th>
+          <th>Estado</th>
+          <th style="text-align:right;">ANR <span id="table-anr-lbl" style="font-size:10px;color:var(--text-muted);">(nominal)</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in proyectos_vinculados %}
+        <tr>
+          <td>
+            <a href="{{ url_for('proyectos.detail', pid=p.id) }}" style="font-weight:500;color:var(--blue);text-decoration:none;">{{ p.nombre }}</a>
+            {% if p.codigo %}<div style="font-size:11px;color:var(--text-muted);font-family:monospace;">{{ p.codigo }}</div>{% endif %}
+          </td>
+          <td>
+            <span class="badge" style="background:{{ p.prog_color }}22;color:{{ p.prog_color }};font-size:11px;">{{ p.prog_codigo }}</span>
+          </td>
+          <td style="text-align:center;" class="text-sm">{{ p.anio or '—' }}</td>
+          <td><span class="badge badge-{{ p.estado }}" style="font-size:11px;">{{ p.estado|replace('_',' ') }}</span></td>
+          <td style="text-align:right;font-family:monospace;font-size:13px;" class="anr-cell"
+              data-nom="{{ p.anr_nom|int }}"
+              data-real="{{ p.anr_real|int }}">
+            {% if p.anr_nom > 0 %}{{ fmt_anr(p.anr_nom) }}{% else %}<span style="color:var(--text-muted);">—</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
+
 {% else %}
 <div class="card card-body" style="text-align:center;padding:40px;color:var(--text-muted);">
   <span class="material-icons-round" style="font-size:48px;display:block;margin-bottom:8px;">rocket_launch</span>
@@ -396,13 +480,124 @@
 {% endblock %}
 
 {% block scripts %}
+{% if tab == 'proyectos' and proyectos_vinculados %}
 <script>
-// Formatear valores ANR
-document.querySelectorAll('.anr-value[data-value]').forEach(el => {
-  const v = parseFloat(el.dataset.value);
-  if (!isNaN(v) && v > 0) {
-    el.textContent = '$\u202f' + v.toLocaleString('es-AR', {minimumFractionDigits:0, maximumFractionDigits:0});
+(function () {
+  const byPrograma = {{ by_programa | tojson }};
+  const byAnio     = {{ by_anio     | tojson }};
+  const ipcFecha   = '{{ ipc_fecha_val }}';
+
+  function fmtAnr(v) {
+    v = parseFloat(v) || 0;
+    if (v >= 1e6) return '$' + (v / 1e6).toFixed(1) + ' M';
+    if (v >= 1e3) return '$' + Math.round(v / 1e3) + ' k';
+    return '$' + Math.round(v);
   }
-});
+
+  const barOpts = (xFmt) => ({
+    indexAxis: 'y',
+    plugins: {
+      legend: { display: false },
+      tooltip: xFmt ? { callbacks: { label: c => xFmt(c.raw) } } : {}
+    },
+    scales: {
+      x: {
+        ticks: { font: { size: 11 }, callback: xFmt || undefined },
+        grid: { color: '#eee' }
+      },
+      y: { ticks: { font: { size: 12, weight: '600' } } }
+    },
+    responsive: true,
+    maintainAspectRatio: false
+  });
+
+  // Chart: n proyectos por programa
+  const ctxN = document.getElementById('chart-prog-n');
+  if (ctxN) {
+    new Chart(ctxN, {
+      type: 'bar',
+      data: {
+        labels: byPrograma.map(p => p.codigo),
+        datasets: [{
+          data: byPrograma.map(p => p.n),
+          backgroundColor: byPrograma.map(p => p.color + 'cc'),
+          borderRadius: 4
+        }]
+      },
+      options: barOpts(null)
+    });
+  }
+
+  // Chart: ANR por programa (actualizable con switch)
+  let chartAnrProg = null;
+  const ctxAnr = document.getElementById('chart-prog-anr');
+  if (ctxAnr) {
+    chartAnrProg = new Chart(ctxAnr, {
+      type: 'bar',
+      data: {
+        labels: byPrograma.map(p => p.codigo),
+        datasets: [{
+          data: byPrograma.map(p => p.anr_nom),
+          backgroundColor: byPrograma.map(p => p.color + 'cc'),
+          borderRadius: 4
+        }]
+      },
+      options: barOpts(fmtAnr)
+    });
+  }
+
+  // Chart: proyectos por convocatoria
+  const ctxAnio = document.getElementById('chart-anio');
+  if (ctxAnio) {
+    new Chart(ctxAnio, {
+      type: 'bar',
+      data: {
+        labels: byAnio.map(a => a.anio),
+        datasets: [{
+          data: byAnio.map(a => a.n),
+          backgroundColor: '#1565C0bb',
+          borderRadius: 4
+        }]
+      },
+      options: {
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { font: { size: 11 } } },
+          y: { ticks: { font: { size: 11 }, stepSize: 1 }, grid: { color: '#eee' } }
+        },
+        responsive: true,
+        maintainAspectRatio: false
+      }
+    });
+  }
+
+  // ANR switch
+  let anrMode = 'nominal';
+  window.setAnrMode = function (mode) {
+    anrMode = mode;
+    document.getElementById('anr-nom-btn').classList.toggle('active', mode === 'nominal');
+    document.getElementById('anr-real-btn').classList.toggle('active', mode === 'real');
+
+    const kpiEl = document.getElementById('kpi-anr-total');
+    if (kpiEl) kpiEl.textContent = fmtAnr(parseInt(mode === 'real' ? kpiEl.dataset.real : kpiEl.dataset.nom) || 0);
+
+    const suffix = mode === 'nominal' ? '(nominal)' : '(real ' + ipcFecha + ')';
+    ['kpi-anr-lbl', 'chart-anr-mode', 'table-anr-lbl'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = suffix;
+    });
+
+    document.querySelectorAll('.anr-cell').forEach(function (cell) {
+      const v = parseInt(mode === 'real' ? cell.dataset.real : cell.dataset.nom) || 0;
+      cell.textContent = v > 0 ? fmtAnr(v) : '\u2014';
+    });
+
+    if (chartAnrProg) {
+      chartAnrProg.data.datasets[0].data = byPrograma.map(p => mode === 'real' ? p.anr_real : p.anr_nom);
+      chartAnrProg.update();
+    }
+  };
+})();
 </script>
+{% endif %}
 {% endblock %}

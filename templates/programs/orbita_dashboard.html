@@ -237,36 +237,117 @@
           <tbody>
             {% set linea_col = {'Documento de trabajo':'#1E325C','Ficha de Planificación Estratégica':'#592673','Estudios de caso':'#00AEC3','Indicadores de CTeI':'#1A9E5C'} %}
             {% set est_badge = {'Publicado':'finalizado','En elaboración':'pendiente','En edición':'activo','En revisión':'en_proceso','Próximo a publicarse':'en_finalizacion'} %}
-            {% for p in proyectos %}
-            <tr data-titulo="{{ p.nombre|lower }}" data-linea="{{ p.linea or '' }}" data-estado="{{ p.situacion_clinica or '' }}" data-ib="{{ p.ib2 or '' }}">
-              <td class="mono text-sm" style="color:var(--text-muted);">{{ p.codigo }}</td>
-              <td style="max-width:260px;">
-                <a href="{{ url_for('proyectos.detail', pid=p.id) }}" style="font-weight:600;color:var(--teal);text-decoration:none;font-size:13px;">
-                  {{ p.nombre[:70] }}{% if p.nombre|length > 70 %}…{% endif %}
-                </a>
-              </td>
-              <td>
-                {% if p.linea %}
-                <span style="background:{{ linea_col.get(p.linea,'#1E325C') }}22;color:{{ linea_col.get(p.linea,'#1E325C') }};padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">
-                  {{ p.linea[:20] }}{% if p.linea|length > 20 %}…{% endif %}
-                </span>
-                {% else %}—{% endif %}
-              </td>
-              <td style="font-weight:600;font-size:13px;">{{ p.ib2 or '—' }}</td>
-              <td class="text-sm">{{ p.anio or '—' }}</td>
-              <td class="text-sm">{{ p.anio_publicacion or '—' }}</td>
-              <td class="mono text-sm orb-table-anr"
-                  data-nom="{{ p.anr_monto or 0 }}"
-                  data-real="{{ p.anr_real or 0 }}">
-                {% if p.anr_monto %}${{ "%.1f"|format(p.anr_monto/1e6) }}M{% else %}<span class="text-muted">—</span>{% endif %}
-              </td>
-              <td>
-                <span class="badge badge-{{ est_badge.get(p.situacion_clinica,'pendiente') }}" style="font-size:11px;">
-                  {{ p.situacion_clinica or '—' }}
-                </span>
-              </td>
-              <td><a href="{{ url_for('proyectos.detail', pid=p.id) }}" class="btn btn-secondary btn-sm btn-icon"><span class="material-icons-round">open_in_new</span></a></td>
-            </tr>
+            {% set ns = namespace(gidx=0) %}
+            {% for grupo in grupos_list %}
+              {% if grupo.multi %}
+              {# ── Fila padre (grupo de documentos con mismo título) ─────── #}
+              <tr class="orb-group-parent" data-group-id="{{ ns.gidx }}" data-expanded="0"
+                  data-titulo="{{ grupo.nombre|lower }}"
+                  data-linea="{{ grupo.linea or '' }}"
+                  style="background:var(--surface-2);">
+                <td class="mono text-sm" style="color:var(--text-muted);">—</td>
+                <td style="max-width:260px;">
+                  <span style="font-weight:700;font-size:13px;">
+                    {{ grupo.nombre[:70] }}{% if grupo.nombre|length > 70 %}…{% endif %}
+                  </span>
+                  <span style="background:#59267322;color:#592673;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700;margin-left:6px;white-space:nowrap;">
+                    {{ grupo.docs|length }} versiones
+                  </span>
+                </td>
+                <td>
+                  {% if grupo.linea %}
+                  <span style="background:{{ linea_col.get(grupo.linea,'#1E325C') }}22;color:{{ linea_col.get(grupo.linea,'#1E325C') }};padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">
+                    {{ grupo.linea[:20] }}
+                  </span>
+                  {% else %}—{% endif %}
+                </td>
+                <td style="font-size:12px;color:var(--text-muted);font-style:italic;">{{ grupo.docs|length }} instituciones</td>
+                <td class="text-sm">{{ grupo.anio_redaccion or '—' }}</td>
+                <td class="text-sm">—</td>
+                <td class="mono text-sm orb-table-anr"
+                    data-nom="{{ grupo.total_anr or 0 }}"
+                    data-real="{{ grupo.total_anr_real or 0 }}">
+                  {% if grupo.total_anr %}${{ "%.1f"|format(grupo.total_anr/1e6) }}M{% else %}<span class="text-muted">—</span>{% endif %}
+                </td>
+                <td><span class="text-muted text-sm">—</span></td>
+                <td>
+                  <button class="btn btn-secondary btn-sm btn-icon" onclick="toggleOrbGroup({{ ns.gidx }}, this)" title="Expandir versiones">
+                    <span class="material-icons-round" style="font-size:16px;transition:transform .2s;">expand_more</span>
+                  </button>
+                </td>
+              </tr>
+              {# ── Filas hijo (una por IB) ──────────────────────────────── #}
+              {% for p in grupo.docs %}
+              <tr class="orb-group-child orb-child-{{ ns.gidx }}" style="display:none;"
+                  data-titulo="{{ p.nombre|lower }}"
+                  data-linea="{{ p.linea or '' }}"
+                  data-estado="{{ p.situacion_clinica or '' }}"
+                  data-ib="{{ p.ib2 or '' }}"
+                  data-group-id="{{ ns.gidx }}">
+                <td class="mono text-sm" style="color:var(--text-muted);padding-left:20px;">{{ p.codigo or '—' }}</td>
+                <td style="max-width:260px;padding-left:20px;">
+                  <span style="color:var(--text-muted);margin-right:4px;">↳</span>
+                  <a href="{{ url_for('proyectos.detail', pid=p.id) }}" style="font-weight:600;color:var(--teal);text-decoration:none;font-size:13px;">
+                    {{ p.ib2 or '(sin IB)' }}
+                  </a>
+                </td>
+                <td>
+                  {% if p.linea %}
+                  <span style="background:{{ linea_col.get(p.linea,'#1E325C') }}22;color:{{ linea_col.get(p.linea,'#1E325C') }};padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">
+                    {{ p.linea[:20] }}
+                  </span>
+                  {% else %}—{% endif %}
+                </td>
+                <td style="font-weight:600;font-size:13px;">{{ p.ib2 or '—' }}</td>
+                <td class="text-sm">{{ p.anio_redaccion or '—' }}</td>
+                <td class="text-sm">{{ p.anio_publicacion or '—' }}</td>
+                <td class="mono text-sm orb-table-anr"
+                    data-nom="{{ p.anr_monto or 0 }}"
+                    data-real="{{ p.anr_real or 0 }}">
+                  {% if p.anr_monto %}${{ "%.1f"|format(p.anr_monto/1e6) }}M{% else %}<span class="text-muted">—</span>{% endif %}
+                </td>
+                <td>
+                  <span class="badge badge-{{ est_badge.get(p.situacion_clinica,'pendiente') }}" style="font-size:11px;">
+                    {{ p.situacion_clinica or '—' }}
+                  </span>
+                </td>
+                <td><a href="{{ url_for('proyectos.detail', pid=p.id) }}" class="btn btn-secondary btn-sm btn-icon"><span class="material-icons-round">open_in_new</span></a></td>
+              </tr>
+              {% endfor %}
+              {% set ns.gidx = ns.gidx + 1 %}
+              {% else %}
+              {# ── Fila normal (un solo documento para ese título) ─────── #}
+              {% set p = grupo.docs[0] %}
+              <tr data-titulo="{{ p.nombre|lower }}" data-linea="{{ p.linea or '' }}" data-estado="{{ p.situacion_clinica or '' }}" data-ib="{{ p.ib2 or '' }}">
+                <td class="mono text-sm" style="color:var(--text-muted);">{{ p.codigo }}</td>
+                <td style="max-width:260px;">
+                  <a href="{{ url_for('proyectos.detail', pid=p.id) }}" style="font-weight:600;color:var(--teal);text-decoration:none;font-size:13px;">
+                    {{ p.nombre[:70] }}{% if p.nombre|length > 70 %}…{% endif %}
+                  </a>
+                </td>
+                <td>
+                  {% if p.linea %}
+                  <span style="background:{{ linea_col.get(p.linea,'#1E325C') }}22;color:{{ linea_col.get(p.linea,'#1E325C') }};padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">
+                    {{ p.linea[:20] }}{% if p.linea|length > 20 %}…{% endif %}
+                  </span>
+                  {% else %}—{% endif %}
+                </td>
+                <td style="font-weight:600;font-size:13px;">{{ p.ib2 or '—' }}</td>
+                <td class="text-sm">{{ p.anio_redaccion or '—' }}</td>
+                <td class="text-sm">{{ p.anio_publicacion or '—' }}</td>
+                <td class="mono text-sm orb-table-anr"
+                    data-nom="{{ p.anr_monto or 0 }}"
+                    data-real="{{ p.anr_real or 0 }}">
+                  {% if p.anr_monto %}${{ "%.1f"|format(p.anr_monto/1e6) }}M{% else %}<span class="text-muted">—</span>{% endif %}
+                </td>
+                <td>
+                  <span class="badge badge-{{ est_badge.get(p.situacion_clinica,'pendiente') }}" style="font-size:11px;">
+                    {{ p.situacion_clinica or '—' }}
+                  </span>
+                </td>
+                <td><a href="{{ url_for('proyectos.detail', pid=p.id) }}" class="btn btn-secondary btn-sm btn-icon"><span class="material-icons-round">open_in_new</span></a></td>
+              </tr>
+              {% endif %}
             {% endfor %}
           </tbody>
         </table>
@@ -286,6 +367,7 @@ const ORB = {
   linea:    {{ por_linea|tojson }},
   ib:       {{ por_ib|tojson }},
   anio:     {{ por_anio|tojson }},
+  anio_pub: {{ por_anio_pub|tojson }},
   pipeline: {{ pipeline_ed|tojson }},
 };
 const ORB_TOTALS = { n: {{ total }}, nom: {{ total_anr }}, real: {{ total_anr_real }} };
@@ -301,6 +383,9 @@ function fmtM(v) {
 
 let orbMode = 'n'; // 'n' | 'nom' | 'real'
 let chartLinea, chartIB, chartAnios;
+
+// Eje X unificado para el gráfico de años (se calcula una vez en buildOrbCharts)
+let aniosUnificados = [];
 
 function orbSetMode(mode) {
   orbMode = mode;
@@ -343,7 +428,7 @@ function orbSetMode(mode) {
     if (isAnr) {
       chartAnios.data.datasets[2] = {
         label: isReal ? 'ANR real ($M)' : 'ANR nominal ($M)',
-        data:  ORB.anio.map(d => ((d[key]||0)/1e6).toFixed(1)),
+        data:  aniosUnificados.map(a => { const r=ORB.anio.find(d=>d.anio_red==a); return r ? ((r[key]||0)/1e6).toFixed(1) : 0; }),
         backgroundColor: isReal ? C.green+'55' : C.navy+'44',
         borderColor:     isReal ? C.green : C.navy,
         borderWidth: 1, borderRadius: 4, type:'bar', yAxisID:'y2'
@@ -356,7 +441,7 @@ function orbSetMode(mode) {
     if (anioSub) {
       anioSub.textContent = isAnr
         ? (isReal ? 'ANR real pesos '+ORB_IPC_FECHA : 'ANR nominal')
-        : 'Año de redacción';
+        : 'Año de redacción / publicación';
     }
   }
 
@@ -426,7 +511,12 @@ function buildOrbCharts() {
     }
   });
 
-  const anios = [...new Set(ORB.anio.map(d => d.anio_red))].sort();
+  // Eje X unificado: unión de años de redacción y años de publicación
+  const aniosRed = ORB.anio.map(d => d.anio_red);
+  const aniosPub = ORB.anio_pub.map(d => d.anio_pub);
+  aniosUnificados = [...new Set([...aniosRed, ...aniosPub])].sort();
+  const anios = aniosUnificados;
+
   chartAnios = new Chart(document.getElementById('chart-anios'), {
     type: 'bar',
     data: {
@@ -437,7 +527,7 @@ function buildOrbCharts() {
           backgroundColor:C.navy+'BB', borderColor:C.navy, borderWidth:2, borderRadius:4,
           stack:'s', yAxisID:'y' },
         { label:'Publicados',
-          data: anios.map(a => { const r=ORB.anio.find(d=>d.anio_red==a); return r?r.publicados:0; }),
+          data: anios.map(a => { const r=ORB.anio_pub.find(d=>d.anio_pub==a); return r?r.publicados:0; }),
           backgroundColor:C.green+'BB', borderColor:C.green, borderWidth:2, borderRadius:4,
           stack:'s2', yAxisID:'y' },
       ]
@@ -456,6 +546,18 @@ function buildOrbCharts() {
   });
 }
 
+/* ── Toggle grupo (expandir/colapsar versiones) ── */
+function toggleOrbGroup(gid, btn) {
+  const parent   = document.querySelector(`tr.orb-group-parent[data-group-id="${gid}"]`);
+  const children = document.querySelectorAll(`.orb-child-${gid}`);
+  const expanded = parent.dataset.expanded === '1';
+  const icon     = btn.querySelector('.material-icons-round');
+
+  children.forEach(c => { c.style.display = expanded ? 'none' : ''; });
+  parent.dataset.expanded = expanded ? '0' : '1';
+  if (icon) icon.style.transform = expanded ? '' : 'rotate(180deg)';
+}
+
 /* ── Live filter ── */
 function filterOrb() {
   const q  = document.getElementById('orb-search').value.toLowerCase();
@@ -463,7 +565,9 @@ function filterOrb() {
   const e  = document.getElementById('orb-estado').value;
   const ib = document.getElementById('orb-ib').value;
   let vis = 0;
-  document.querySelectorAll('#orb-table tbody tr').forEach(row => {
+
+  // Filas simples (sin grupo)
+  document.querySelectorAll('#orb-table tbody tr:not(.orb-group-parent):not(.orb-group-child)').forEach(row => {
     const ok = (!q  || row.dataset.titulo.includes(q))
             && (!l  || row.dataset.linea  === l)
             && (!e  || row.dataset.estado === e)
@@ -471,6 +575,36 @@ function filterOrb() {
     row.style.display = ok ? '' : 'none';
     if (ok) vis++;
   });
+
+  // Filas padre + hijos
+  document.querySelectorAll('#orb-table tbody tr.orb-group-parent').forEach(parent => {
+    const gid      = parent.dataset.groupId;
+    const children = document.querySelectorAll(`.orb-child-${gid}`);
+    const expanded = parent.dataset.expanded === '1';
+
+    const titleOk = !q || parent.dataset.titulo.includes(q);
+    const lineaOk = !l || parent.dataset.linea === l;
+
+    // El grupo se muestra si título+línea coinciden Y algún hijo pasa filtro estado/IB
+    let anyChildOk = false;
+    children.forEach(child => {
+      const ok = (!e  || child.dataset.estado === e)
+              && (!ib || child.dataset.ib     === ib);
+      if (ok) anyChildOk = true;
+    });
+
+    const parentVisible = titleOk && lineaOk && anyChildOk;
+    parent.style.display = parentVisible ? '' : 'none';
+    if (parentVisible) vis++;
+
+    children.forEach(child => {
+      if (!parentVisible || !expanded) { child.style.display = 'none'; return; }
+      const ok = (!e  || child.dataset.estado === e)
+              && (!ib || child.dataset.ib     === ib);
+      child.style.display = ok ? '' : 'none';
+    });
+  });
+
   const cnt = document.getElementById('orb-count');
   if (cnt) cnt.textContent = vis + ' documentos';
 }

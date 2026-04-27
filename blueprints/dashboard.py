@@ -14,7 +14,10 @@ def dashboard():
     for p in programas:
         total      = query("SELECT COUNT(*) as n FROM proyectos WHERE programa_id=?", (p['id'],), one=True)['n']
         activos    = query("SELECT COUNT(*) as n FROM proyectos WHERE programa_id=? AND estado='activo'", (p['id'],), one=True)['n']
-        finalizados= query("SELECT COUNT(*) as n FROM proyectos WHERE programa_id=? AND estado='finalizado'", (p['id'],), one=True)['n']
+        if p['codigo'] == 'ORBITA':
+            finalizados = query("SELECT COUNT(*) as n FROM proyectos WHERE programa_id=? AND situacion_clinica='Publicado'", (p['id'],), one=True)['n']
+        else:
+            finalizados = query("SELECT COUNT(*) as n FROM proyectos WHERE programa_id=? AND estado='finalizado'", (p['id'],), one=True)['n']
         ipc_rule   = query("SELECT campo_monto FROM ipc_config WHERE programa_id=?", (p['id'],), one=True)
         campo_monto= ipc_rule['campo_monto'] if ipc_rule and ipc_rule['campo_monto'] else 'anr_monto'
         anr        = query(f"SELECT COALESCE(SUM({campo_monto}),0) as s FROM proyectos WHERE programa_id=?", (p['id'],), one=True)['s']
@@ -90,7 +93,10 @@ def api_stats():
         SELECT pr.nombre, pr.color, pr.codigo,
                COUNT(p.id) as total,
                SUM(CASE WHEN p.estado='activo' THEN 1 ELSE 0 END) as activos,
-               SUM(CASE WHEN p.estado='finalizado' THEN 1 ELSE 0 END) as finalizados,
+               SUM(CASE WHEN pr.codigo='ORBITA'
+                        THEN (CASE WHEN p.situacion_clinica='Publicado' THEN 1 ELSE 0 END)
+                        ELSE (CASE WHEN p.estado='finalizado' THEN 1 ELSE 0 END)
+                   END) as finalizados,
                COALESCE(SUM(p.anr_monto), 0) as total_anr
         FROM programas pr
         LEFT JOIN proyectos p ON p.programa_id = pr.id

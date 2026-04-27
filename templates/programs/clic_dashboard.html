@@ -98,6 +98,15 @@
   </div>
 </div>
 
+{% set sin_insc_total = (clic_stats.sin_inscriptos or 0) + (redclic_stats.sin_inscriptos or 0) %}
+{% if sin_insc_total > 0 %}
+<div style="font-size:12px;color:var(--text-muted);margin:-16px 0 20px;padding:6px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:7px;display:flex;align-items:center;gap:6px;">
+  <span class="material-icons-round" style="font-size:15px;color:#F5A623;">info</span>
+  <span>Las métricas de participantes incluyen solo los <strong>{{ total - sin_insc_total }}</strong> centros con datos de inscripción cargados.
+  Los <strong>{{ sin_insc_total }}</strong> restantes no tienen inscriptos registrados y se excluyen de estos totales.</span>
+</div>
+{% endif %}
+
 <!-- Subprogramas -->
 <div class="grid-2 mb-3">
   <!-- CLIC -->
@@ -121,6 +130,11 @@
           <div class="text-sm text-muted">finalizaron</div>
         </div>
       </div>
+      {% if clic_stats.sin_inscriptos %}
+      <div style="font-size:11px;color:var(--text-muted);margin-top:10px;">
+        * {{ clic_stats.sin_inscriptos }} centro{% if clic_stats.sin_inscriptos != 1 %}s{% endif %} sin inscriptos cargados excluido{% if clic_stats.sin_inscriptos != 1 %}s{% endif %}
+      </div>
+      {% endif %}
       {% if clic_stats.inscriptos > 0 %}
       <div style="margin-top:12px;">
         <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Tasa de finalización</div>
@@ -153,6 +167,11 @@
           <div class="text-sm text-muted">finalizaron</div>
         </div>
       </div>
+      {% if redclic_stats.sin_inscriptos %}
+      <div style="font-size:11px;color:var(--text-muted);margin-top:10px;">
+        * {{ redclic_stats.sin_inscriptos }} centro{% if redclic_stats.sin_inscriptos != 1 %}s{% endif %} sin inscriptos cargados excluido{% if redclic_stats.sin_inscriptos != 1 %}s{% endif %}
+      </div>
+      {% endif %}
       {% if redclic_stats.inscriptos > 0 %}
       <div style="margin-top:12px;">
         <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Tasa de finalización</div>

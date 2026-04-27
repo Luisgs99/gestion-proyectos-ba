@@ -130,6 +130,16 @@ CLAVE_PREFIX = {
     'CLINICA': 'CLINICA-',
 }
 
+# Correcciones de valores que vienen mal desde el sheet.
+# Estructura: { programa_codigo: { campo_db: { valor_incorrecto: valor_correcto } } }
+VALUE_CORRECTIONS = {
+    'ORBITA': {
+        'ib2': {
+            'UNDMP': 'UNMDP',
+        },
+    },
+}
+
 # Columnas de tipo numérico
 NUMERIC_COLS = {
     'anr_monto', 'anr_actualizado', 'n_investigadores', 'n_mujeres',
@@ -314,6 +324,25 @@ def _fetch_csv(url):
         raise ValueError(f"El archivo descargado no es un CSV válido: {e}") from e
 
 
+def _slugify(s):
+    """Slug simple para usar como parte de clave compuesta."""
+    if not s:
+        return ''
+    s = str(s).strip().lower()
+    s = unicodedata.normalize('NFD', s)
+    s = ''.join(c for c in s if unicodedata.category(c) != 'Mn')
+    s = re.sub(r'[^a-z0-9]+', '-', s).strip('-')
+    return s[:80]
+
+
+# Para programas donde la unicidad no la da una sola columna del sheet, sino
+# una combinación de columnas. La función recibe el dict `datos` (ya mapeado y
+# casteado) y devuelve el valor a usar como codigo en la DB.
+COMPOSITE_CODE_FN = {
+    'ORBITA': lambda d: _slugify(d.get('nombre') or '') + '|' + _slugify(d.get('ib2') or 'sin-ib'),
+}
+
+
 def _run_sync(programa, col_map, campo_clave='codigo'):
     """
     Ejecuta el sync para un programa dado.
@@ -344,6 +373,8 @@ def _run_sync(programa, col_map, campo_clave='codigo'):
     insertados, actualizados, errores = 0, 0, 0
     detalle = []
 
+    composite_fn = COMPOSITE_CODE_FN.get(programa['codigo'])
+
     conn = get_db()
     try:
         for i, row in df.iterrows():
@@ -369,28 +400,62 @@ def _run_sync(programa, col_map, campo_clave='codigo'):
                 if not datos:
                     continue
 
-                # Asegurar que el campo clave en datos tenga el valor con prefijo
-                datos[campo_clave] = val_clave_db
+                # Aplicar correcciones de valores (errores conocidos en el sheet)
+                for col_db, corr_map in VALUE_CORRECTIONS.get(programa['codigo'], {}).items():
+                    if datos.get(col_db) in corr_map:
+                        datos[col_db] = corr_map[datos[col_db]]
+
+                # ORBITA: derivar estado desde situacion_clinica
+                # El pipeline cierra con "Publicado", que equivale a finalizado
+                if programa['codigo'] == 'ORBITA':
+                    sc = datos.get('situacion_clinica') or ''
+                    datos['estado'] = 'finalizado' if sc == 'Publicado' else 'activo'
 
                 # Nombre obligatorio: si viene vacío, usar el valor clave
                 if not datos.get('nombre') or str(datos.get('nombre', '')).strip() in ('', 'nan'):
                     datos['nombre'] = val_clave_db
 
-                # UPSERT — WHERE usa campo_clave con el valor prefijado
+                # ── Clave efectiva: compuesta (ej. ORBITA) o simple ──────────
+                if composite_fn:
+                    effective_val   = composite_fn(datos)
+                    effective_clave = 'codigo'
+                    datos['codigo'] = effective_val
+                else:
+                    effective_val   = val_clave_db
+                    effective_clave = campo_clave
+                    datos[effective_clave] = effective_val
+
+                # UPSERT: buscar por clave efectiva
                 existente = conn.execute(
-                    f"SELECT id FROM proyectos WHERE programa_id=? AND {campo_clave}=?",
-                    (programa['id'], val_clave_db)
+                    f"SELECT id FROM proyectos WHERE programa_id=? AND {effective_clave}=?",
+                    (programa['id'], effective_val)
                 ).fetchone()
 
+                # Migración: si se usa clave compuesta y no se encontró por codigo,
+                # buscar por nombre + ib2 (filas antiguas sin codigo compuesto).
+                if not existente and composite_fn:
+                    nombre_val = datos.get('nombre', '')
+                    ib2_val    = datos.get('ib2')
+                    if ib2_val:
+                        existente = conn.execute(
+                            "SELECT id FROM proyectos WHERE programa_id=? AND nombre=? AND ib2=?",
+                            (programa['id'], nombre_val, ib2_val)
+                        ).fetchone()
+                    else:
+                        existente = conn.execute(
+                            "SELECT id FROM proyectos WHERE programa_id=? AND nombre=? AND ib2 IS NULL",
+                            (programa['id'], nombre_val)
+                        ).fetchone()
+
                 if existente:
-                    # UPDATE: todas las columnas del sheet excepto el campo clave
-                    set_parts = [f"{col}=?" for col in datos if col != campo_clave]
-                    vals = [datos[col] for col in datos if col != campo_clave]
+                    # UPDATE por id (más seguro que por clave)
+                    set_parts = [f"{col}=?" for col in datos if col != effective_clave]
+                    vals = [datos[col] for col in datos if col != effective_clave]
                     if set_parts:
-                        vals += [programa['id'], val_clave_db]
+                        vals.append(existente['id'])
                         conn.execute(
                             f"UPDATE proyectos SET {', '.join(set_parts)}, updated_at=CURRENT_TIMESTAMP "
-                            f"WHERE programa_id=? AND {campo_clave}=?",
+                            f"WHERE id=?",
                             vals
                         )
                     actualizados += 1
