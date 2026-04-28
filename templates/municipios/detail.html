@@ -1,0 +1,643 @@
+{% extends "base.html" %}
+{% block title %}{{ nombre }} — Municipio{% endblock %}
+
+{% block breadcrumb %}
+  <a href="{{ url_for('adoptantes.list', tab='municipios') }}"
+     style="color:var(--text-muted);text-decoration:none;">Municipios</a>
+  / {{ nombre }}
+{% endblock %}
+
+{% block topbar_actions %}
+  {% if can_edit() %}
+  <button onclick="toggleEdit()" id="edit-btn" class="btn btn-secondary btn-sm">
+    <span class="material-icons-round">edit</span> Editar info
+  </button>
+  {% endif %}
+{% endblock %}
+
+{# ── Macros ────────────────────────────────────────────────────────────────── #}
+{% macro fmt_anr(v) -%}
+{%- set v = (v or 0)|float -%}
+{%- if v >= 1000000 -%}{{ "$%.1f M"|format(v/1e6) }}{%- elif v >= 1000 -%}{{ "$%.0f k"|format(v/1e3) }}{%- else -%}${{ v|int }}{%- endif -%}
+{%- endmacro %}
+
+{% macro estado_badge(estado) -%}
+{%- set c = {'activo':'#00897B','en_curso':'#1565C0','finalizado':'#43A047','suspendido':'#E65100','cancelado':'#B71C1C','pendiente':'#F9A825'} -%}
+<span class="badge" style="background:{{ c.get(estado,'#888') }};color:#fff;font-size:10px;">{{ estado or '—' }}</span>
+{%- endmacro %}
+
+{% block extra_head %}
+{% if coords %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+
+{# ── Header ────────────────────────────────────────────────────────────────── #}
+<div style="background:linear-gradient(135deg,#004D40,#00897B);border-radius:12px;padding:22px 28px;margin-bottom:20px;color:#fff;display:flex;align-items:flex-start;gap:20px;flex-wrap:wrap;">
+  <div style="flex:1;min-width:200px;">
+    <div style="font-size:11px;opacity:.65;font-family:monospace;margin-bottom:4px;text-transform:uppercase;letter-spacing:.08em;">
+      <span class="material-icons-round" style="font-size:12px;vertical-align:middle;">location_city</span>
+      Municipio · Provincia de Buenos Aires
+    </div>
+    <h1 style="font-size:24px;font-weight:700;margin-bottom:6px;">{{ nombre }}</h1>
+    {% if muni %}
+      {% if muni.ciudad_cabecera %}
+      <div style="font-size:13px;opacity:.8;">Ciudad cabecera: <strong>{{ muni.ciudad_cabecera }}</strong></div>
+      {% endif %}
+      {% if muni.intendente %}
+      <div style="font-size:13px;opacity:.75;margin-top:4px;">
+        <span class="material-icons-round" style="font-size:13px;vertical-align:middle;">person</span>
+        Int.: {{ muni.intendente }}{% if muni.partido_politico %} — {{ muni.partido_politico }}{% endif %}
+      </div>
+      {% endif %}
+      {% if muni.seccion_electoral %}
+      <div style="font-size:12px;opacity:.6;margin-top:3px;">Sección electoral: {{ muni.seccion_electoral }}</div>
+      {% endif %}
+    {% else %}
+    <div style="font-size:12px;opacity:.6;margin-top:4px;">Sin información institucional cargada aún.</div>
+    {% endif %}
+  </div>
+
+  <!-- KPI cards -->
+  <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start;">
+    {% set n_adop = clic|length + adoptante|length %}
+    {% set n_emp  = fitba_empresas|length + clinica_empresas|length %}
+    <div style="background:rgba(255,255,255,.15);border-radius:10px;padding:12px 16px;text-align:center;min-width:90px;">
+      <div style="font-size:26px;font-weight:700;">{{ n_adop }}</div>
+      <div style="font-size:10px;opacity:.75;white-space:nowrap;">Proy. adoptante</div>
+    </div>
+    <div style="background:rgba(255,255,255,.15);border-radius:10px;padding:12px 16px;text-align:center;min-width:90px;">
+      <div style="font-size:26px;font-weight:700;">{{ n_emp }}</div>
+      <div style="font-size:10px;opacity:.75;white-space:nowrap;">Proy. empresas</div>
+    </div>
+    {% if anr_adoptante > 0 %}
+    <div style="background:rgba(255,255,255,.15);border-radius:10px;padding:12px 16px;text-align:center;min-width:90px;">
+      <div style="font-size:18px;font-weight:700;font-family:monospace;">{{ fmt_anr(anr_adoptante) }}</div>
+      <div style="font-size:10px;opacity:.75;white-space:nowrap;">ANR adoptante</div>
+    </div>
+    {% endif %}
+    {% if anr_empresas > 0 %}
+    <div style="background:rgba(255,255,255,.15);border-radius:10px;padding:12px 16px;text-align:center;min-width:90px;">
+      <div style="font-size:18px;font-weight:700;font-family:monospace;">{{ fmt_anr(anr_empresas) }}</div>
+      <div style="font-size:10px;opacity:.75;white-space:nowrap;">ANR empresas</div>
+    </div>
+    {% endif %}
+    {% if muni and muni.poblacion %}
+    <div style="background:rgba(255,255,255,.15);border-radius:10px;padding:12px 16px;text-align:center;min-width:90px;">
+      <div style="font-size:16px;font-weight:700;">{{ "{:,.0f}".format(muni.poblacion|float).replace(",",".") }}</div>
+      <div style="font-size:10px;opacity:.75;">Habitantes</div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{# ── Tabs ──────────────────────────────────────────────────────────────────── #}
+{% set n_adop = clic|length + adoptante|length %}
+{% set n_emp  = fitba_empresas|length + clinica_empresas|length %}
+<div style="border-bottom:2px solid var(--border-color);margin-bottom:20px;display:flex;gap:0;flex-wrap:wrap;">
+  {% for t, label, icon, badge in [
+      ('info',      'Información',              'info',     0),
+      ('adoptante', 'Como adoptante',            'handshake', n_adop),
+      ('empresas',  'Empresas en el municipio',  'business',  n_emp),
+  ] %}
+  <a href="?tab={{ t }}"
+     style="padding:10px 18px;font-size:13px;font-weight:500;text-decoration:none;
+            border-bottom:2px solid transparent;margin-bottom:-2px;
+            color:{% if tab==t %}var(--blue){% else %}var(--text-muted){% endif %};
+            border-bottom-color:{% if tab==t %}var(--blue){% else %}transparent{% endif %};">
+    <span class="material-icons-round" style="font-size:15px;vertical-align:middle;margin-right:4px;">{{ icon }}</span>
+    {{ label }}
+    {% if badge > 0 %}<span class="badge" style="margin-left:4px;font-size:10px;">{{ badge }}</span>{% endif %}
+  </a>
+  {% endfor %}
+</div>
+
+
+{# ════════════════════════════ TAB INFORMACIÓN ════════════════════════════ #}
+{% if tab == 'info' %}
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;">
+
+  <!-- Datos generales -->
+  <div class="card card-body">
+    <div class="section-title mb-3">Datos institucionales</div>
+
+    <!-- Vista modo lectura -->
+    <div id="info-display">
+      <dl style="display:grid;grid-template-columns:160px 1fr;gap:6px 12px;font-size:13px;">
+        <dt class="text-muted">Intendente</dt>
+        <dd style="font-weight:600;">{{ (muni and muni.intendente) or '—' }}</dd>
+
+        <dt class="text-muted">Partido</dt>
+        <dd>
+          {{ (muni and muni.partido_politico) or '—' }}
+          {% if muni and muni.interna %}
+          <span style="font-size:11px;color:var(--text-muted);margin-left:6px;">interna: {{ muni.interna }}</span>
+          {% endif %}
+        </dd>
+
+        <dt class="text-muted">Sección electoral</dt>
+        <dd>{{ (muni and muni.seccion_electoral) or '—' }}</dd>
+
+        <dt class="text-muted">Ciudad cabecera</dt>
+        <dd>{{ (muni and muni.ciudad_cabecera) or '—' }}</dd>
+
+        <dt class="text-muted">GBA</dt>
+        <dd>
+          {% if muni %}
+            {% if muni.gba %}
+            <span class="badge" style="background:#1565C0;color:#fff;font-size:10px;">GBA</span>
+            {% else %}
+            <span style="font-size:12px;color:var(--text-muted);">Interior</span>
+            {% endif %}
+          {% else %}—{% endif %}
+        </dd>
+
+        <dt class="text-muted">Población</dt>
+        <dd>
+          {% if muni and muni.poblacion %}
+            {{ "{:,.0f}".format(muni.poblacion|float).replace(",",".") }} hab.
+          {% else %}—{% endif %}
+        </dd>
+
+        <dt class="text-muted">Superficie</dt>
+        <dd>
+          {% if muni and muni.superficie %}
+            {{ "{:,.0f}".format(muni.superficie|float).replace(",",".") }} km²
+          {% else %}—{% endif %}
+        </dd>
+
+        <dt class="text-muted">Densidad</dt>
+        <dd>
+          {% if muni and muni.densidad %}
+            {{ "{:,.0f}".format(muni.densidad|float).replace(",",".") }} hab/km²
+          {% else %}—{% endif %}
+        </dd>
+
+        <dt class="text-muted">Concejales</dt>
+        <dd>{{ (muni and muni.concejales) or '—' }}</dd>
+
+        <dt class="text-muted" style="padding-top:2px;">Universidades</dt>
+        <dd>
+          {% if universidades %}
+            {% for u in universidades %}
+            <div style="margin-bottom:2px;">
+              {% if u.website %}
+              <a href="{{ u.website }}" target="_blank" rel="noopener"
+                 style="color:var(--blue);font-size:13px;">{{ u.nombre_corto or u.nombre }}</a>
+              {% else %}
+              {{ u.nombre_corto or u.nombre }}
+              {% endif %}
+              <span style="font-size:11px;color:var(--text-muted);margin-left:4px;">(registrada)</span>
+            </div>
+            {% endfor %}
+          {% endif %}
+          {% if muni and muni.universidades %}
+          <div style="color:var(--text-muted);font-size:12px;{% if universidades %}margin-top:4px;{% endif %}">
+            {{ muni.universidades }}
+          </div>
+          {% endif %}
+          {% if not universidades and not (muni and muni.universidades) %}—{% endif %}
+        </dd>
+
+        {% if muni and muni.notas %}
+        <dt class="text-muted">Notas</dt>
+        <dd style="white-space:pre-wrap;font-size:12px;">{{ muni.notas }}</dd>
+        {% endif %}
+      </dl>
+    </div>
+
+    <!-- Formulario de edición (oculto por defecto) -->
+    {% if can_edit() %}
+    <form id="info-form" action="{{ url_for('municipios.editar', nombre=nombre) }}"
+          method="POST" style="display:none;">
+      <div style="display:grid;gap:12px;">
+        <div>
+          <label class="form-label">Intendente</label>
+          <input type="text" name="intendente" class="form-control"
+                 value="{{ (muni and muni.intendente) or '' }}" style="font-size:13px;">
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <div>
+            <label class="form-label">Partido político</label>
+            <input type="text" name="partido_politico" class="form-control"
+                   value="{{ (muni and muni.partido_politico) or '' }}" style="font-size:13px;">
+          </div>
+          <div>
+            <label class="form-label">Interna</label>
+            <input type="text" name="interna" class="form-control"
+                   value="{{ (muni and muni.interna) or '' }}" style="font-size:13px;"
+                   placeholder="AK, CFK, NS/NC…">
+          </div>
+        </div>
+        <div>
+          <label class="form-label">Sección electoral</label>
+          <input type="text" name="seccion_electoral" class="form-control"
+                 value="{{ (muni and muni.seccion_electoral) or '' }}" style="font-size:13px;">
+        </div>
+        <div>
+          <label class="form-label">Ciudad cabecera</label>
+          <input type="text" name="ciudad_cabecera" class="form-control"
+                 value="{{ (muni and muni.ciudad_cabecera) or '' }}" style="font-size:13px;">
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
+          <div>
+            <label class="form-label">Población (hab.)</label>
+            <input type="number" name="poblacion" class="form-control"
+                   value="{{ (muni and muni.poblacion) or '' }}" style="font-size:13px;" min="0">
+          </div>
+          <div>
+            <label class="form-label">Superficie (km²)</label>
+            <input type="number" name="superficie" class="form-control" step="0.1"
+                   value="{{ (muni and muni.superficie) or '' }}" style="font-size:13px;" min="0">
+          </div>
+          <div>
+            <label class="form-label">Concejales</label>
+            <input type="number" name="concejales" class="form-control"
+                   value="{{ (muni and muni.concejales) or '' }}" style="font-size:13px;" min="0">
+          </div>
+        </div>
+        <div>
+          <label class="form-label">GBA</label>
+          <select name="gba" class="form-control" style="font-size:13px;">
+            <option value="0" {% if not (muni and muni.gba) %}selected{% endif %}>No (Interior)</option>
+            <option value="1" {% if muni and muni.gba %}selected{% endif %}>Sí (Gran Buenos Aires)</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label">Universidades adicionales
+            <span style="font-size:11px;color:var(--text-muted);font-weight:400;">
+              (no registradas en el sistema)
+            </span>
+          </label>
+          <input type="text" name="universidades" class="form-control"
+                 value="{{ (muni and muni.universidades) or '' }}" style="font-size:13px;"
+                 placeholder="ej: Campus UADE, Extensión UBA">
+        </div>
+        <div>
+          <label class="form-label">Notas</label>
+          <textarea name="notas" class="form-control" rows="3"
+                    style="font-size:13px;">{{ (muni and muni.notas) or '' }}</textarea>
+        </div>
+      </div>
+      <div style="margin-top:16px;display:flex;gap:8px;">
+        <button type="submit" class="btn btn-primary btn-sm">
+          <span class="material-icons-round">save</span> Guardar
+        </button>
+        <button type="button" onclick="toggleEdit()" class="btn btn-secondary btn-sm">Cancelar</button>
+      </div>
+    </form>
+    {% endif %}
+  </div>
+
+  <!-- Columna derecha: chart + mapa -->
+  <div style="display:flex;flex-direction:column;gap:20px;">
+
+    {% set total_proy = clic|length + adoptante|length + fitba_empresas|length + clinica_empresas|length %}
+    {% if total_proy > 0 %}
+    <!-- Charts -->
+    <div class="card card-body">
+      <div class="section-title mb-2">Distribución de proyectos</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:center;">
+        <div>
+          <div style="font-size:11px;color:var(--text-muted);text-align:center;margin-bottom:4px;">Por programa</div>
+          <canvas id="chart-prog" style="max-height:160px;"></canvas>
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--text-muted);text-align:center;margin-bottom:4px;">Por estado</div>
+          <canvas id="chart-estados" style="max-height:160px;"></canvas>
+        </div>
+      </div>
+
+      <!-- ANR summary -->
+      {% if anr_adoptante > 0 or anr_empresas > 0 %}
+      <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px;display:flex;gap:16px;flex-wrap:wrap;">
+        {% if anr_adoptante > 0 %}
+        <div style="font-size:12px;">
+          <span style="color:var(--text-muted);">ANR como adoptante:</span>
+          <strong style="font-family:monospace;margin-left:4px;">{{ fmt_anr(anr_adoptante) }}</strong>
+        </div>
+        {% endif %}
+        {% if anr_empresas > 0 %}
+        <div style="font-size:12px;">
+          <span style="color:var(--text-muted);">ANR empresas locales:</span>
+          <strong style="font-family:monospace;margin-left:4px;">{{ fmt_anr(anr_empresas) }}</strong>
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- Mapa -->
+    {% if coords %}
+    <div class="card" style="overflow:hidden;border-radius:10px;">
+      <div id="map-muni" style="height:240px;"></div>
+    </div>
+    {% else %}
+    <div class="card card-body" style="text-align:center;padding:32px;color:var(--text-muted);">
+      <span class="material-icons-round" style="font-size:40px;display:block;margin-bottom:8px;opacity:.35;">map</span>
+      <div style="font-size:13px;">Coordenadas no disponibles para este municipio.</div>
+    </div>
+    {% endif %}
+
+  </div><!-- /columna derecha -->
+</div><!-- /grid -->
+
+
+{# ═════════════════════════ TAB COMO ADOPTANTE ════════════════════════════ #}
+{% elif tab == 'adoptante' %}
+
+<!-- Sección CLIC -->
+{% if clic %}
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header" style="gap:8px;">
+    <span class="material-icons-round" style="color:#00897B;">lightbulb</span>
+    <strong>CLIC</strong>
+    <span style="font-size:12px;color:var(--text-muted);">Municipio como adoptante</span>
+    <span class="badge" style="background:#00897B;color:#fff;margin-left:4px;">{{ clic|length }}</span>
+  </div>
+
+  {# Totales de participantes #}
+  {% set ins = namespace(v=0) %}{% set ini = namespace(v=0) %}{% set fin = namespace(v=0) %}
+  {% for p in clic %}
+    {% set ins.v = ins.v + (p.n_inscriptos or 0) %}
+    {% set ini.v = ini.v + (p.n_iniciaron  or 0) %}
+    {% set fin.v = fin.v + (p.n_finalizaron or 0) %}
+  {% endfor %}
+  {% if ins.v > 0 or ini.v > 0 %}
+  <div style="padding:10px 20px;background:rgba(0,137,123,.07);border-bottom:1px solid var(--border);display:flex;gap:24px;flex-wrap:wrap;">
+    <div>
+      <span style="font-size:20px;font-weight:700;color:#00897B;">{{ ins.v }}</span>
+      <span style="font-size:12px;color:var(--text-muted);margin-left:4px;">inscriptos</span>
+    </div>
+    <div>
+      <span style="font-size:20px;font-weight:700;color:#00897B;">{{ ini.v }}</span>
+      <span style="font-size:12px;color:var(--text-muted);margin-left:4px;">iniciaron</span>
+    </div>
+    <div>
+      <span style="font-size:20px;font-weight:700;color:#00897B;">{{ fin.v }}</span>
+      <span style="font-size:12px;color:var(--text-muted);margin-left:4px;">finalizaron</span>
+    </div>
+  </div>
+  {% endif %}
+
+  <div style="overflow-x:auto;">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Centro CLIC</th>
+          <th>Área temática</th>
+          <th style="text-align:center;">Inscriptos</th>
+          <th style="text-align:center;">Iniciaron</th>
+          <th style="text-align:center;">Finalizaron</th>
+          <th>Estado</th>
+          <th style="text-align:right;">ANR</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in clic %}
+        <tr>
+          <td>
+            <a href="{{ url_for('proyectos.detail', pid=p.id) }}"
+               style="font-weight:600;color:var(--blue);text-decoration:none;">{{ p.nombre }}</a>
+            {% if p.codigo %}<div style="font-size:10px;color:var(--text-muted);font-family:monospace;">{{ p.codigo }}</div>{% endif %}
+          </td>
+          <td class="text-sm">{{ p.area_tematica or '—' }}</td>
+          <td style="text-align:center;font-weight:600;">{{ p.n_inscriptos or '—' }}</td>
+          <td style="text-align:center;">{{ p.n_iniciaron  or '—' }}</td>
+          <td style="text-align:center;">{{ p.n_finalizaron or '—' }}</td>
+          <td>{{ estado_badge(p.estado) }}</td>
+          <td style="text-align:right;font-family:monospace;font-size:12px;">{{ fmt_anr(p.anr_monto) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<!-- Otros programas donde es adoptante -->
+{% if adoptante %}
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header" style="gap:8px;">
+    <span class="material-icons-round" style="color:#666;">handshake</span>
+    <strong>Otros programas</strong>
+    <span style="font-size:12px;color:var(--text-muted);">Municipio como adoptante</span>
+    <span class="badge" style="margin-left:4px;">{{ adoptante|length }}</span>
+  </div>
+  <div style="overflow-x:auto;">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Proyecto</th>
+          <th>Programa</th>
+          <th>Estado</th>
+          <th style="text-align:right;">ANR</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in adoptante %}
+        <tr>
+          <td>
+            <a href="{{ url_for('proyectos.detail', pid=p.id) }}"
+               style="font-weight:600;color:var(--blue);text-decoration:none;">{{ p.nombre }}</a>
+            {% if p.codigo %}<div style="font-size:10px;color:var(--text-muted);font-family:monospace;">{{ p.codigo }}</div>{% endif %}
+          </td>
+          <td><span class="badge" style="background:{{ p.color }};color:#fff;font-size:10px;">{{ p.prog }}</span></td>
+          <td>{{ estado_badge(p.estado) }}</td>
+          <td style="text-align:right;font-family:monospace;font-size:12px;">{{ fmt_anr(p.anr_monto) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% if not clic and not adoptante %}
+<div class="card card-body" style="text-align:center;padding:48px;color:var(--text-muted);">
+  <span class="material-icons-round" style="font-size:48px;display:block;margin-bottom:8px;opacity:.35;">handshake</span>
+  No hay proyectos donde {{ nombre }} figure como municipio adoptante.
+</div>
+{% endif %}
+
+
+{# ══════════════════════ TAB EMPRESAS EN EL MUNICIPIO ═════════════════════ #}
+{% elif tab == 'empresas' %}
+
+<!-- FITBA empresas -->
+{% if fitba_empresas %}
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header" style="gap:8px;">
+    <span class="material-icons-round" style="color:#006AC1;">star</span>
+    <strong>FITBA</strong>
+    <span style="font-size:12px;color:var(--text-muted);">Empresas adoptantes ubicadas en {{ nombre }}</span>
+    <span class="badge" style="background:#006AC1;color:#fff;margin-left:4px;">{{ fitba_empresas|length }}</span>
+  </div>
+  <div style="overflow-x:auto;">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Proyecto</th>
+          <th>Empresa adoptante</th>
+          <th>Sector</th>
+          <th>Estado</th>
+          <th style="text-align:right;">ANR</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in fitba_empresas %}
+        <tr>
+          <td>
+            <a href="{{ url_for('proyectos.detail', pid=p.id) }}"
+               style="font-weight:600;color:var(--blue);text-decoration:none;">{{ p.nombre }}</a>
+            {% if p.codigo %}<div style="font-size:10px;color:var(--text-muted);font-family:monospace;">{{ p.codigo }}</div>{% endif %}
+          </td>
+          <td class="text-sm" style="max-width:220px;">{{ p.adoptante or '—' }}</td>
+          <td class="text-sm">{{ p.sector_actividad_1 or '—' }}</td>
+          <td>{{ estado_badge(p.estado) }}</td>
+          <td style="text-align:right;font-family:monospace;font-size:12px;">{{ fmt_anr(p.anr_monto) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<!-- Clínica empresas -->
+{% if clinica_empresas %}
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header" style="gap:8px;">
+    <span class="material-icons-round" style="color:#E65100;">medical_services</span>
+    <strong>Clínica Tecnológica</strong>
+    <span style="font-size:12px;color:var(--text-muted);">Empresas ubicadas en {{ nombre }}</span>
+    <span class="badge" style="background:#E65100;color:#fff;margin-left:4px;">{{ clinica_empresas|length }}</span>
+  </div>
+  <div style="overflow-x:auto;">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Empresa / Proyecto</th>
+          <th>Rubro</th>
+          <th>Estado</th>
+          <th style="text-align:right;">Monto</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in clinica_empresas %}
+        <tr>
+          <td>
+            <a href="{{ url_for('proyectos.detail', pid=p.id) }}"
+               style="font-weight:600;color:var(--blue);text-decoration:none;">{{ p.nombre }}</a>
+            {% if p.codigo %}<div style="font-size:10px;color:var(--text-muted);font-family:monospace;">{{ p.codigo }}</div>{% endif %}
+          </td>
+          <td class="text-sm">{{ p.rubro or '—' }}</td>
+          <td>{{ estado_badge(p.estado) }}</td>
+          <td style="text-align:right;font-family:monospace;font-size:12px;">{{ fmt_anr(p.monto) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% if not fitba_empresas and not clinica_empresas %}
+<div class="card card-body" style="text-align:center;padding:48px;color:var(--text-muted);">
+  <span class="material-icons-round" style="font-size:48px;display:block;margin-bottom:8px;opacity:.35;">business_off</span>
+  No hay empresas con proyectos ubicadas en {{ nombre }}.
+</div>
+{% endif %}
+
+{% endif %}{# fin tabs #}
+{% endblock %}
+
+
+{% block scripts %}
+<script>
+function toggleEdit() {
+  const display = document.getElementById('info-display');
+  const form    = document.getElementById('info-form');
+  const btn     = document.getElementById('edit-btn');
+  if (!form) return;
+  const editing = form.style.display !== 'none';
+  display.style.display = editing ? '' : 'none';
+  form.style.display    = editing ? 'none' : '';
+  if (btn) btn.innerHTML = editing
+    ? '<span class="material-icons-round">edit</span> Editar info'
+    : '<span class="material-icons-round">close</span> Cancelar';
+}
+
+{% if tab == 'info' %}
+(function() {
+  const progData   = {{ chart_prog|safe }};
+  const estadoData = {{ chart_estados|safe }};
+  const eColors    = {{ estado_colors|safe }};
+
+  const PROG_DEFAULTS = {'CLIC':'#00897B','FITBA':'#006AC1','FITBA (empresas)':'#1565C0','Clínica':'#E65100'};
+
+  const progKeys = Object.keys(progData);
+  if (progKeys.length > 0) {
+    const ctx = document.getElementById('chart-prog');
+    if (ctx) {
+      new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: progKeys,
+          datasets: [{
+            data: progKeys.map(k => progData[k].count),
+            backgroundColor: progKeys.map(k => progData[k].color || PROG_DEFAULTS[k] || '#888'),
+            borderWidth: 2, borderColor: '#fff'
+          }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: true,
+          plugins: { legend: { position: 'bottom', labels: { font: { size: 10 }, padding: 6 } } }
+        }
+      });
+    }
+  }
+
+  const estKeys = Object.keys(estadoData);
+  if (estKeys.length > 0) {
+    const ctx2 = document.getElementById('chart-estados');
+    if (ctx2) {
+      new Chart(ctx2, {
+        type: 'doughnut',
+        data: {
+          labels: estKeys,
+          datasets: [{
+            data: estKeys.map(k => estadoData[k]),
+            backgroundColor: estKeys.map(k => eColors[k] || '#888'),
+            borderWidth: 2, borderColor: '#fff'
+          }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: true,
+          plugins: { legend: { position: 'bottom', labels: { font: { size: 10 }, padding: 6 } } }
+        }
+      });
+    }
+  }
+})();
+{% endif %}
+</script>
+
+{% if coords %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function() {
+  const lat = {{ coords.lat }}, lng = {{ coords.lng }};
+  const map = L.map('map-muni', { scrollWheelZoom: false }).setView([lat, lng], 10);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OSM</a>'
+  }).addTo(map);
+  L.marker([lat, lng]).addTo(map)
+    .bindPopup('<strong>{{ nombre }}</strong>').openPopup();
+})();
+</script>
+{% endif %}
+{% endblock %}

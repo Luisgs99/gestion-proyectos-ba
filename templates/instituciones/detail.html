@@ -6,7 +6,7 @@
 {%- if v >= 1000000 -%}{{ "$%.1f M"|format(v/1e6) }}{%- elif v >= 1000 -%}{{ "$%.0f k"|format(v/1e3) }}{%- else -%}${{ v|int }}{%- endif -%}
 {%- endmacro %}
 {% block breadcrumb %}
-  <a href="{{ url_for('instituciones.list') }}" style="color:var(--text-muted);text-decoration:none;">Instituciones</a>
+  <a href="{{ url_for('instituciones.listado') }}" style="color:var(--text-muted);text-decoration:none;">Instituciones</a>
   / {{ inst.nombre_corto or inst.nombre }}
 {% endblock %}
 
@@ -58,6 +58,7 @@
     {% if t == 'contactos' and contactos %}<span class="badge" style="margin-left:4px;font-size:10px;">{{ contactos|length }}</span>{% endif %}
     {% if t == 'documentos' and documentos %}<span class="badge" style="margin-left:4px;font-size:10px;">{{ documentos|length }}</span>{% endif %}
     {% if t == 'novedades' and novedades %}<span class="badge" style="margin-left:4px;font-size:10px;">{{ novedades|length }}</span>{% endif %}
+    {% if t == 'proyectos' and proyectos_vinculados %}<span class="badge" style="margin-left:4px;font-size:10px;">{{ proyectos_vinculados|length }}</span>{% endif %}
   </a>
   {% endfor %}
 </div>

@@ -113,11 +113,13 @@ COLUMN_MAPS = {
         'fecha de puesta en marcha'         : 'fecha_puesta_marcha',
     },
     'ORBITA': {
+        'codigo'                       : 'codigo',
         'linea'                        : 'linea',
         'nombre'                       : 'nombre',
         'ano de redaccion'             : 'anio_redaccion',
         'ano de publicacion'           : 'anio_publicacion',
-        'institucion beneficiaria'     : 'ib2',
+        'institucion beneficiaria'     : 'beneficiario',
+        'ib especifica'                : 'ib2',
         'estado'                       : 'situacion_clinica',  # el dashboard lee situacion_clinica
         'anr'                          : 'anr_monto',
         'anr feb26'                    : 'anr_indice_mm',
@@ -134,7 +136,7 @@ CLAVE_PREFIX = {
 # Estructura: { programa_codigo: { campo_db: { valor_incorrecto: valor_correcto } } }
 VALUE_CORRECTIONS = {
     'ORBITA': {
-        'ib2': {
+        'beneficiario': {
             'UNDMP': 'UNMDP',
         },
     },
@@ -339,7 +341,9 @@ def _slugify(s):
 # una combinación de columnas. La función recibe el dict `datos` (ya mapeado y
 # casteado) y devuelve el valor a usar como codigo en la DB.
 COMPOSITE_CODE_FN = {
-    'ORBITA': lambda d: _slugify(d.get('nombre') or '') + '|' + _slugify(d.get('ib2') or 'sin-ib'),
+    # Usa el código real del sheet si está disponible; si no, genera un slug nombre|IB
+    # como fallback para registros sin código.
+    'ORBITA': lambda d: d.get('codigo') or (_slugify(d.get('nombre') or '') + '|' + _slugify(d.get('beneficiario') or 'sin-ib')),
 }
 
 
@@ -410,6 +414,7 @@ def _run_sync(programa, col_map, campo_clave='codigo'):
                 if programa['codigo'] == 'ORBITA':
                     sc = datos.get('situacion_clinica') or ''
                     datos['estado'] = 'finalizado' if sc == 'Publicado' else 'activo'
+                    datos.setdefault('ib2', None)  # limpiar solo si no viene del sheet
 
                 # Nombre obligatorio: si viene vacío, usar el valor clave
                 if not datos.get('nombre') or str(datos.get('nombre', '')).strip() in ('', 'nan'):
@@ -432,25 +437,30 @@ def _run_sync(programa, col_map, campo_clave='codigo'):
                 ).fetchone()
 
                 # Migración: si se usa clave compuesta y no se encontró por codigo,
-                # buscar por nombre + ib2 (filas antiguas sin codigo compuesto).
+                # buscar por nombre + ib2/beneficiario (filas antiguas sin codigo compuesto).
                 if not existente and composite_fn:
                     nombre_val = datos.get('nombre', '')
                     ib2_val    = datos.get('ib2')
-                    if ib2_val:
+                    benef_val  = datos.get('beneficiario')
+                    lookup_val = ib2_val or benef_val
+                    if lookup_val:
                         existente = conn.execute(
-                            "SELECT id FROM proyectos WHERE programa_id=? AND nombre=? AND ib2=?",
-                            (programa['id'], nombre_val, ib2_val)
+                            "SELECT id FROM proyectos WHERE programa_id=? AND nombre=? AND (ib2=? OR beneficiario=?)",
+                            (programa['id'], nombre_val, lookup_val, lookup_val)
                         ).fetchone()
                     else:
                         existente = conn.execute(
-                            "SELECT id FROM proyectos WHERE programa_id=? AND nombre=? AND ib2 IS NULL",
+                            "SELECT id FROM proyectos WHERE programa_id=? AND nombre=? AND ib2 IS NULL AND beneficiario IS NULL",
                             (programa['id'], nombre_val)
                         ).fetchone()
 
                 if existente:
-                    # UPDATE por id (más seguro que por clave)
-                    set_parts = [f"{col}=?" for col in datos if col != effective_clave]
-                    vals = [datos[col] for col in datos if col != effective_clave]
+                    # UPDATE por id (más seguro que por clave).
+                    # Para claves compuestas se incluye también el effective_clave (codigo)
+                    # porque puede estar migrando de slug/NULL al valor real del sheet.
+                    exclude = set() if composite_fn else {effective_clave}
+                    set_parts = [f"{col}=?" for col in datos if col not in exclude]
+                    vals = [datos[col] for col in datos if col not in exclude]
                     if set_parts:
                         vals.append(existente['id'])
                         conn.execute(

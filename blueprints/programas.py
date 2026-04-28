@@ -338,12 +338,12 @@ def _orbita_detail(pid, programa, proyectos, hitos):
     """, (pid,))
 
     por_ib = query(f"""
-        SELECT p.ib2 as beneficiario, COUNT(*) as n,
+        SELECT p.beneficiario, COUNT(*) as n,
                COALESCE(SUM(p.anr_monto),0) as total_anr,
                COALESCE(SUM({real_expr}),0) as total_real
         FROM proyectos p {IPC_JOIN}
-        WHERE p.programa_id=? AND p.ib2 IS NOT NULL
-        GROUP BY p.ib2 ORDER BY n DESC
+        WHERE p.programa_id=? AND p.beneficiario IS NOT NULL
+        GROUP BY p.beneficiario ORDER BY n DESC
     """, (pid,))
 
     por_anio = query(f"""

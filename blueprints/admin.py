@@ -137,6 +137,29 @@ def usuario_eliminar(uid):
     if uid == session.get('user_id'):
         flash('No podés eliminar tu propio usuario.', 'danger')
         return redirect(url_for('admin.usuarios'))
-    execute("DELETE FROM users WHERE id=?", (uid,))
-    flash('Usuario eliminado.', 'success')
+    refs = query("""
+        SELECT (SELECT COUNT(*) FROM proyectos          WHERE agente_id=?)
+             + (SELECT COUNT(*) FROM asignaciones       WHERE agente_id=?)
+             + (SELECT COUNT(*) FROM novedades          WHERE registrado_por=?)
+             + (SELECT COUNT(*) FROM avances_hitos      WHERE registrado_por=?)
+             + (SELECT COUNT(*) FROM importaciones      WHERE importado_por=?)
+             + (SELECT COUNT(*) FROM sync_log           WHERE ejecutado_por=?)
+             + (SELECT COUNT(*) FROM institucion_documentos WHERE subido_por=?)
+             + (SELECT COUNT(*) FROM institucion_novedades  WHERE registrado_por=?) AS total
+    """, (uid,) * 8, one=True)
+    if refs and refs['total'] > 0:
+        execute("UPDATE users SET activo=0 WHERE id=?", (uid,))
+        flash('El usuario tenía registros asociados y fue desactivado (no eliminado). '
+              'Podés reactivarlo desde Editar si es necesario.', 'warning')
+    else:
+        execute("DELETE FROM users WHERE id=?", (uid,))
+        flash('Usuario eliminado.', 'success')
+    return redirect(url_for('admin.usuarios'))
+
+
+@bp.route('/admin/usuarios/<int:uid>/reactivar', methods=['POST'])
+@admin_required
+def usuario_reactivar(uid):
+    execute("UPDATE users SET activo=1 WHERE id=?", (uid,))
+    flash('Usuario reactivado.', 'success')
     return redirect(url_for('admin.usuarios'))

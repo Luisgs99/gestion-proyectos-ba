@@ -101,7 +101,7 @@
   </div>
   <div style="display:flex;gap:6px;align-items:flex-end;">
     <button type="submit" class="btn btn-primary">Filtrar</button>
-    {% if q or tipo or estado %}<a href="{{ url_for('instituciones.list') }}" class="btn btn-secondary">Limpiar</a>{% endif %}
+    {% if q or tipo or estado %}<a href="{{ url_for('instituciones.listado') }}" class="btn btn-secondary">Limpiar</a>{% endif %}
   </div>
 </form>
 

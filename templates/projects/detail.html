@@ -46,6 +46,16 @@
       {% if total_hitos > 0 %}
       <div style="font-size:11px;opacity:.55;margin-top:8px;">{{ porcentaje }}% hitos · {{ completados }}/{{ total_hitos }}</div>
       {% endif %}
+    {% elif proyecto.programa_codigo == 'ORBITA' %}
+      {% set _olabels = {'En redacción':'En redacción','En edición':'En edición','Publicado':'Publicado'} %}
+      {% set _oicons  = {'En redacción':'edit','En edición':'edit_note','Publicado':'auto_stories'} %}
+      {% set _est_orb = proyecto.situacion_clinica or '' %}
+      <div style="font-size:10px;opacity:.65;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">Estado editorial</div>
+      <div style="display:flex;align-items:center;justify-content:center;gap:6px;">
+        <span class="material-icons-round" style="font-size:22px;">{{ _oicons.get(_est_orb, 'help_outline') }}</span>
+        <span style="font-family:'Sora',sans-serif;font-size:16px;font-weight:700;line-height:1.2;">{{ _olabels.get(_est_orb, _est_orb or '—') }}</span>
+      </div>
+      {% if proyecto.anio_redaccion %}<div style="font-size:11px;opacity:.55;margin-top:8px;">Redacción: {{ proyecto.anio_redaccion }}</div>{% endif %}
     {% else %}
       <div style="font-family:'Sora',sans-serif;font-size:36px;font-weight:700;">{{ porcentaje }}%</div>
       <div style="font-size:12px;opacity:.75;">avance global</div>
@@ -64,14 +74,24 @@
 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:16px;margin-bottom:24px;">
   <div class="card card-body">
     <div class="section-title mb-1">Beneficiario</div>
+    {% if proyecto.programa_codigo == 'FITBA' %}
+    <div style="font-weight:600;">{{ proyecto.ib2 or proyecto.beneficiario or '—' }}</div>
+    {% if proyecto.beneficiario %}<div class="text-sm text-muted">Beneficiario específico: {{ proyecto.beneficiario }}</div>{% endif %}
+    {% elif proyecto.programa_codigo == 'ORBITA' %}
+    <div style="font-weight:600;">{{ proyecto.beneficiario or '—' }}</div>
+    {% if proyecto.ib2 %}<div class="text-sm text-muted">Beneficiario específico: {{ proyecto.ib2 }}</div>{% endif %}
+    {% else %}
     <div style="font-weight:600;">{{ proyecto.beneficiario or '—' }}</div>
     <div class="text-sm text-muted">{{ proyecto.tipo_beneficiario or 'universidad' }}</div>
+    {% endif %}
   </div>
+  {% if proyecto.programa_codigo != 'ORBITA' %}
   <div class="card card-body">
     <div class="section-title mb-1">Adoptante</div>
     <div style="font-weight:600;">{{ proyecto.adoptante or '—' }}</div>
     <div class="text-sm text-muted">{{ proyecto.tipo_adoptante or 'empresa' }}</div>
   </div>
+  {% endif %}
   <div class="card card-body">
     <div class="section-title mb-1">ANR</div>
     <div class="anr-value" data-value="{{ proyecto.anr_monto or 0 }}" style="font-family:'Sora',sans-serif;font-size:22px;font-weight:700;color:var(--blue);">—</div>
@@ -93,10 +113,13 @@
   <!-- Left: Hitos -->
   <div class="tabs-container">
     <div class="tabs">
+      {% if proyecto.programa_codigo != 'ORBITA' %}
       <button class="tab-btn active" data-tab="hitos">Hitos de avance</button>
-      <button class="tab-btn" data-tab="info">Datos del proyecto</button>
+      {% endif %}
+      <button class="tab-btn {% if proyecto.programa_codigo == 'ORBITA' %}active{% endif %}" data-tab="info">Datos del proyecto</button>
     </div>
 
+    {% if proyecto.programa_codigo != 'ORBITA' %}
     <div class="tab-content active" data-tab-content="hitos">
       {% if proyecto.programa_codigo == 'FITBA' %}
       <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:12px;display:flex;gap:10px;align-items:flex-start;">
@@ -269,9 +292,38 @@
         </div>
       </div>
     </div>
+    {% endif %}
 
-    <div class="tab-content" data-tab-content="info">
+    <div class="tab-content {% if proyecto.programa_codigo == 'ORBITA' %}active{% endif %}" data-tab-content="info">
       <div class="card card-body">
+        {% if proyecto.programa_codigo == 'ORBITA' %}
+        {% set _ostate = proyecto.situacion_clinica or '' %}
+        {% set _ostate_colors = {'En redacción':'var(--gold)','En edición':'var(--blue)','Publicado':'var(--green)'} %}
+        {% set _ostate_icons  = {'En redacción':'edit','En edición':'edit_note','Publicado':'auto_stories'} %}
+        {% set _ostate_color  = _ostate_colors.get(_ostate, 'var(--text-muted)') %}
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;padding:10px 14px;background:var(--surface-2);border-radius:8px;border-left:3px solid {{ _ostate_color }};">
+          <span class="material-icons-round" style="font-size:18px;color:{{ _ostate_color }};">{{ _ostate_icons.get(_ostate, 'help_outline') }}</span>
+          <span style="font-weight:600;color:{{ _ostate_color }};">{{ _ostate or '—' }}</span>
+        </div>
+        <div class="section-title">Datos del documento</div>
+        <table style="width:100%;border-collapse:collapse;">
+          <tr><td class="text-muted text-sm" style="padding:7px 0;width:44%;border-bottom:1px solid var(--border);">Nombre</td><td style="border-bottom:1px solid var(--border);font-weight:600;">{{ proyecto.nombre }}</td></tr>
+          <tr><td class="text-muted text-sm" style="padding:7px 0;border-bottom:1px solid var(--border);">Año de redacción</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.anio_redaccion or '—' }}</td></tr>
+          <tr><td class="text-muted text-sm" style="padding:7px 0;border-bottom:1px solid var(--border);">Año de publicación</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.anio_publicacion or '—' }}</td></tr>
+          <tr><td class="text-muted text-sm" style="padding:7px 0;border-bottom:1px solid var(--border);">Estado</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.situacion_clinica or '—' }}</td></tr>
+          {% if proyecto.beneficiario %}<tr><td class="text-muted text-sm" style="padding:7px 0;border-bottom:1px solid var(--border);">Institución</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.beneficiario }}</td></tr>{% endif %}
+          {% if proyecto.linea %}<tr><td class="text-muted text-sm" style="padding:7px 0;border-bottom:1px solid var(--border);">Línea</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.linea }}</td></tr>{% endif %}
+          {% if proyecto.codigo %}<tr><td class="text-muted text-sm" style="padding:7px 0;border-bottom:1px solid var(--border);">Código</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.codigo }}</td></tr>{% endif %}
+          {% if proyecto.agente_nombre %}<tr><td class="text-muted text-sm" style="padding:7px 0;">Agente responsable</td><td>{{ (proyecto.agente_nombre or '') + ' ' + (proyecto.agente_apellido or '') }}</td></tr>{% endif %}
+        </table>
+        {% if proyecto.detalle %}
+        <div class="section-title mt-2">Detalle</div>
+        <p class="text-sm" style="line-height:1.7;">{{ proyecto.detalle }}</p>
+        {% elif can_edit() %}
+        <div class="section-title mt-2">Detalle</div>
+        <p class="text-sm text-muted" style="font-style:italic;">Sin detalle cargado. Podés completarlo desde <a href="{{ url_for('proyectos.editar', pid=proyecto.id) }}" style="color:var(--blue);">Editar</a>.</p>
+        {% endif %}
+        {% else %}
         <div class="section-title">Información general</div>
         <table style="width:100%;border-collapse:collapse;">
           <tr><td class="text-muted text-sm" style="padding:7px 0;width:40%;border-bottom:1px solid var(--border);">Programa</td><td style="border-bottom:1px solid var(--border);"><span class="tag">{{ proyecto.programa_codigo }}</span></td></tr>
@@ -299,13 +351,14 @@
           {% if proyecto.anio %}<tr><td class="text-muted text-sm" style="padding:6px 0;border-bottom:1px solid var(--border);">Año convocatoria</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.anio }}</td></tr>{% endif %}
           {% if proyecto.director %}<tr><td class="text-muted text-sm" style="padding:6px 0;border-bottom:1px solid var(--border);">Director/a</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.director }}</td></tr>{% endif %}
           {% if proyecto.uvt %}<tr><td class="text-muted text-sm" style="padding:6px 0;border-bottom:1px solid var(--border);">UVT</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.uvt }}</td></tr>{% endif %}
-          {% if proyecto.ib2 %}<tr><td class="text-muted text-sm" style="padding:6px 0;border-bottom:1px solid var(--border);">IB secundario</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.ib2 }}</td></tr>{% endif %}
+          {% if proyecto.ib2 %}<tr><td class="text-muted text-sm" style="padding:6px 0;border-bottom:1px solid var(--border);">Institución beneficiaria (IB2)</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.ib2 }}</td></tr>{% endif %}
           {% if proyecto.n_investigadores %}<tr><td class="text-muted text-sm" style="padding:6px 0;border-bottom:1px solid var(--border);">Investigadores</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.n_investigadores }} ({{ proyecto.n_mujeres or 0 }} mujeres)</td></tr>{% endif %}
           {% if proyecto.sector_actividad_1 %}<tr><td class="text-muted text-sm" style="padding:6px 0;border-bottom:1px solid var(--border);">Sector adoptante</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.sector_actividad_1 }}{% if proyecto.sector_actividad_2 %}, {{ proyecto.sector_actividad_2 }}{% endif %}</td></tr>{% endif %}
           {% if proyecto.sector_tema %}<tr><td class="text-muted text-sm" style="padding:6px 0;border-bottom:1px solid var(--border);">Sector temático</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.sector_tema }}</td></tr>{% endif %}
           {% if proyecto.anr_actualizado %}<tr><td class="text-muted text-sm" style="padding:6px 0;border-bottom:1px solid var(--border);">ANR actualizado</td><td style="border-bottom:1px solid var(--border);font-weight:600;">${{ "{:,.0f}".format(proyecto.anr_actualizado) }}</td></tr>{% endif %}
           {% if proyecto.seccion %}<tr><td class="text-muted text-sm" style="padding:6px 0;">Sección electoral</td><td>{{ proyecto.seccion }}</td></tr>{% endif %}
         </table>
+        {% endif %}
         {% endif %}
 
       </div>

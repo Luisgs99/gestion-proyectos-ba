@@ -12,6 +12,7 @@ from blueprints.reportes     import bp as reportes_bp
 from blueprints.admin        import bp as admin_bp
 from blueprints.instituciones import bp as instituciones_bp
 from blueprints.adoptantes   import bp as adoptantes_bp
+from blueprints.municipios   import bp as municipios_bp
 from blueprints.sync         import bp as sync_bp
 
 app = Flask(__name__)
@@ -32,6 +33,7 @@ app.register_blueprint(reportes_bp)
 app.register_blueprint(admin_bp)
 app.register_blueprint(instituciones_bp)
 app.register_blueprint(adoptantes_bp)
+app.register_blueprint(municipios_bp)
 app.register_blueprint(sync_bp)
 
 if __name__ == '__main__':

@@ -188,14 +188,13 @@
 <!-- Tabs -->
 <div class="tabs-container">
   <div class="tabs">
-    <button class="tab-btn active" data-tab="centros">Centros ({{ total }})</button>
-    <button class="tab-btn" data-tab="estadisticas">Estadísticas</button>
-    <button class="tab-btn" data-tab="hitos">Avance por Hitos</button>
+    <button class="tab-btn active" data-tab="vista_general">Vista general</button>
+    <button class="tab-btn" data-tab="centros">Centros ({{ total }})</button>
     <button class="tab-btn" data-tab="novedades">Novedades recientes</button>
   </div>
 
   <!-- Centros -->
-  <div class="tab-content active" data-tab-content="centros">
+  <div class="tab-content" data-tab-content="centros">
     {% if proyectos %}
     <!-- Filtro por subprograma -->
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
@@ -218,7 +217,6 @@
               <th>Iniciaron</th>
               <th>Finalizaron</th>
               <th>ANR</th>
-              <th>Avance</th>
               <th>Estado</th>
               <th></th>
             </tr>
@@ -246,14 +244,6 @@
                   data-real="{{ p.anr_real or 0 }}">
                 {% if p.anr_monto %}${{ "%.1f"|format(p.anr_monto/1e6) }}M{% else %}<span class="text-muted">—</span>{% endif %}
               </td>
-              <td>
-                <div style="min-width:80px;">
-                  <div class="progress-bar" style="margin-bottom:3px;">
-                    <div class="progress-fill" style="width:{{ p.porcentaje_avance or 0 }}%;background:{{ programa.color }};"></div>
-                  </div>
-                  <div class="text-sm text-muted">{{ p.porcentaje_avance or 0 }}%</div>
-                </div>
-              </td>
               <td><span class="badge badge-{{ p.estado }}">{{ p.estado|replace('_',' ') }}</span></td>
               <td>
                 <a href="{{ url_for('proyectos.detail', pid=p.id) }}" class="btn btn-secondary btn-sm btn-icon">
@@ -274,8 +264,8 @@
     {% endif %}
   </div>
 
-  <!-- Estadísticas -->
-  <div class="tab-content" data-tab-content="estadisticas">
+  <!-- Vista general -->
+  <div class="tab-content active" data-tab-content="vista_general">
     <!-- Participantes por subprograma -->
     <div class="grid-2 mb-3">
       <div class="card">
@@ -342,41 +332,29 @@
       </div>
     </div>
     {% endif %}
-  </div>
 
-  <!-- Hitos -->
-  <div class="tab-content" data-tab-content="hitos">
-    <div class="card">
+    <!-- ── Documentación del programa ──────────────────────────── -->
+    <div class="card" style="margin-top:16px;">
       <div class="card-header">
-        <span class="card-title">Avance global por hito</span>
-        <span class="text-sm text-muted">Centros que completaron cada etapa</span>
+        <span class="card-title">
+          <span class="material-icons-round" style="font-size:17px;vertical-align:middle;margin-right:6px;color:var(--teal);">folder_open</span>
+          Documentación del programa
+        </span>
       </div>
-      <div class="card-body">
-        {% if total > 0 %}
-        <div class="chart-wrap-lg mb-3"><canvas id="chart-hitos"></canvas></div>
-        {% endif %}
-        <div class="section-title mt-2">Detalle por hito</div>
-        <div class="hitos-list">
-          {% for h in hitos %}
-          {% set completados_h = avances_por_hito.get(h.id, 0) %}
-          {% set pct_h = (completados_h / total * 100)|int if total > 0 else 0 %}
-          <div class="hito-item">
-            <div class="hito-dot {% if pct_h == 100 %}completado{% elif pct_h > 0 %}en_proceso{% else %}pendiente{% endif %}">
-              <span class="material-icons-round" style="font-size:14px;">
-                {% if pct_h == 100 %}check{% elif pct_h > 0 %}hourglass_empty{% else %}radio_button_unchecked{% endif %}
-              </span>
-            </div>
-            <div class="hito-info">
-              <div class="hito-nombre">{{ loop.index }}. {{ h.nombre }}</div>
-              <div class="hito-meta">{{ completados_h }} de {{ total }} centros completaron esta etapa</div>
-              <div class="progress-bar mt-1" style="height:4px;max-width:300px;">
-                <div class="progress-fill" style="width:{{ pct_h }}%;background:{{ programa.color }};"></div>
-              </div>
-            </div>
-            <div style="font-family:'Sora',sans-serif;font-weight:700;font-size:16px;color:{{ programa.color }};">{{ pct_h }}%</div>
-          </div>
-          {% endfor %}
-        </div>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Documento</th>
+              <th>Link al documento</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td colspan="2" class="text-muted text-sm" style="text-align:center;padding:20px;">Sin documentos cargados aún.</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
   </div>
@@ -457,27 +435,23 @@ let chartMun, chartAnio, chartArea;
   });
 })();
 
-/* ── Participantes por subprograma (se inicializa al abrir la tab) ─ */
+/* ── Participantes por subprograma ─ */
 var chartParticipantes = null;
-document.querySelectorAll('.tab-btn').forEach(function(btn) {
-  btn.addEventListener('click', function() {
-    if (btn.dataset.tab === 'estadisticas' && !chartParticipantes) {
-      var el = document.getElementById('chart-participantes');
-      if (el) chartParticipantes = new Chart(el, {
-        type: 'bar',
-        data: {
-          labels: ['CLIC', 'RED CLIC'],
-          datasets: [
-            { label: 'Inscriptos',  data: [CLIC_PARTICIPANTES.clic.inscriptos,  CLIC_PARTICIPANTES.redclic.inscriptos],  backgroundColor: '#5C6BC0BB', borderColor: '#5C6BC0', borderWidth: 2, borderRadius: 5 },
-            { label: 'Iniciaron',   data: [CLIC_PARTICIPANTES.clic.iniciaron,   CLIC_PARTICIPANTES.redclic.iniciaron],   backgroundColor: '#0288D1BB', borderColor: '#0288D1', borderWidth: 2, borderRadius: 5 },
-            { label: 'Finalizaron', data: [CLIC_PARTICIPANTES.clic.finalizaron, CLIC_PARTICIPANTES.redclic.finalizaron], backgroundColor: '#2E7D32BB', borderColor: '#2E7D32', borderWidth: 2, borderRadius: 5 },
-          ]
-        },
-        options: { responsive: true, maintainAspectRatio: false,
-          plugins: { legend: { position: 'top' } },
-          scales: { y: { beginAtZero: true, grid: { color: '#EEF1F5' } }, x: { grid: { display: false } } }
-        }
-      });
+document.addEventListener('DOMContentLoaded', function() {
+  var el = document.getElementById('chart-participantes');
+  if (el) chartParticipantes = new Chart(el, {
+    type: 'bar',
+    data: {
+      labels: ['CLIC', 'RED CLIC'],
+      datasets: [
+        { label: 'Inscriptos',  data: [CLIC_PARTICIPANTES.clic.inscriptos,  CLIC_PARTICIPANTES.redclic.inscriptos],  backgroundColor: '#5C6BC0BB', borderColor: '#5C6BC0', borderWidth: 2, borderRadius: 5 },
+        { label: 'Iniciaron',   data: [CLIC_PARTICIPANTES.clic.iniciaron,   CLIC_PARTICIPANTES.redclic.iniciaron],   backgroundColor: '#0288D1BB', borderColor: '#0288D1', borderWidth: 2, borderRadius: 5 },
+        { label: 'Finalizaron', data: [CLIC_PARTICIPANTES.clic.finalizaron, CLIC_PARTICIPANTES.redclic.finalizaron], backgroundColor: '#2E7D32BB', borderColor: '#2E7D32', borderWidth: 2, borderRadius: 5 },
+      ]
+    },
+    options: { responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'top' } },
+      scales: { y: { beginAtZero: true, grid: { color: '#EEF1F5' } }, x: { grid: { display: false } } }
     }
   });
 });
@@ -544,26 +518,6 @@ if (areaEl) {
              scales:{x:{beginAtZero:true,grid:{color:'#EEF1F5'}},y:{grid:{display:false}}}}
   });
 }
-{% endif %}
-
-/* ── Hitos (estático) ────────────────────────────────────── */
-{% if total > 0 %}
-const hitosLabels = {{ hitos|map(attribute='nombre')|list|tojson }};
-const _avancesMap = {{ avances_por_hito|tojson }};
-const hitosVals   = {{ hitos|map(attribute='id')|list|tojson }}.map(id => _avancesMap[id] || 0);
-new Chart(document.getElementById('chart-hitos'), {
-  type:'bar',
-  data:{
-    labels: hitosLabels.map((h,i)=>(i+1)+'. '+h),
-    datasets:[
-      {label:'Completados',   data:hitosVals,               backgroundColor:CLIC_COLOR+'CC',borderColor:CLIC_COLOR,borderWidth:2,borderRadius:5},
-      {label:'Total centros', data:hitosLabels.map(()=>{{ total }}),backgroundColor:'#EEF1F5',borderColor:'#DDE3EC',borderWidth:1,borderRadius:5}
-    ]
-  },
-  options:{responsive:true,maintainAspectRatio:false,
-           plugins:{legend:{position:'top'}},
-           scales:{y:{beginAtZero:true,max:{{ total }},grid:{color:'#EEF1F5'}},x:{grid:{display:false},ticks:{maxRotation:45}}}}
-});
 {% endif %}
 
 /* ── Switch de modo ──────────────────────────────────────── */

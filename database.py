@@ -360,6 +360,21 @@ def init_db():
         FOREIGN KEY (programa_id) REFERENCES programas(id),
         FOREIGN KEY (ejecutado_por) REFERENCES users(id)
     );
+
+    -- ── Municipios: datos institucionales ───────────────────────────────────
+    CREATE TABLE IF NOT EXISTS municipios (
+        id                INTEGER PRIMARY KEY AUTOINCREMENT,
+        nombre            TEXT UNIQUE NOT NULL,
+        intendente        TEXT,
+        partido_politico  TEXT,
+        poblacion         INTEGER,
+        seccion_electoral TEXT,
+        ciudad_cabecera   TEXT,
+        universidades     TEXT,
+        notas             TEXT,
+        created_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at        DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
     """)
 
     # ── Columnas incrementales en hitos ─────────────────────────────────────
@@ -437,12 +452,32 @@ def init_db():
         ("n_inscriptos",          "INTEGER"),
         ("n_iniciaron",           "INTEGER"),
         ("n_finalizaron",         "INTEGER"),
-        ("fecha_puesta_marcha",   "DATE"),
-        ("anr_actualizado",       "REAL"),
+        ("fecha_puesta_marcha",    "DATE"),
+        ("anr_actualizado",        "REAL"),
+        # FITBA
+        ("anio",                   "INTEGER"),
+        ("sector_actividad_1",     "TEXT"),
+        ("sector_actividad_2",     "TEXT"),
+        ("sector_actividad_3",     "TEXT"),
+        # Clínica Tecnológica
+        ("monto_diagnostico",      "REAL"),
+        ("rubro",                  "TEXT"),
     ]
     for col, tipo in nuevas_cols:
         if col not in existing_cols:
             cur.execute(f"ALTER TABLE proyectos ADD COLUMN {col} {tipo}")
+
+    # ── Columnas incrementales en municipios ─────────────────────────────────
+    existing_muni_cols = {row[1] for row in cur.execute("PRAGMA table_info(municipios)").fetchall()}
+    for col, tipo in [
+        ("interna",    "TEXT"),
+        ("superficie", "REAL"),
+        ("densidad",   "REAL"),
+        ("concejales", "INTEGER"),
+        ("gba",        "INTEGER DEFAULT 0"),
+    ]:
+        if col not in existing_muni_cols:
+            cur.execute(f"ALTER TABLE municipios ADD COLUMN {col} {tipo}")
 
     # ── Columnas incrementales en ipc_config ─────────────────────────────────
     existing_ipc_cols = {row[1] for row in cur.execute("PRAGMA table_info(ipc_config)").fetchall()}

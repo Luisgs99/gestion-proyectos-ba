@@ -113,7 +113,8 @@
 <!-- ─── Tabs ─────────────────────────────────────────────────────────── -->
 <div class="tabs-container">
   <div class="tabs">
-    <button class="tab-btn active" data-tab="pipeline">Pipeline</button>
+    <button class="tab-btn active" data-tab="vista_general">Vista general</button>
+    <button class="tab-btn" data-tab="pipeline">Pipeline</button>
     <button class="tab-btn" data-tab="territorio">Territorio</button>
     <button class="tab-btn" data-tab="mapa" id="clin-tab-mapa-btn" onclick="onClinicaMapTabClick()">
       <span class="material-icons-round" style="font-size:14px;vertical-align:middle;">map</span> Mapa
@@ -124,8 +125,126 @@
     <button class="tab-btn" data-tab="empresas">Empresas ({{ total }})</button>
   </div>
 
+  <!-- ── TAB: Vista general ────────────────────────────────────── -->
+  <div class="tab-content active" data-tab-content="vista_general">
+
+    <!-- Resumen del pipeline -->
+    <div class="grid-2 mb-3">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Estado del programa</span>
+          <span class="text-sm text-muted">Distribución de empresas por etapa</span>
+        </div>
+        <div class="card-body">
+          {% set pipeline_positive = pipeline[:6] %}
+          {% set max_n = pipeline_positive|map(attribute='n')|max if pipeline_positive else 1 %}
+          {% set stage_colors = ['#00AEC3','#0097A7','#1A9E5C','#22A954','#E0A800','#592673'] %}
+          {% for etapa in pipeline_positive %}
+          {% set pct = (etapa.n / (total if total > 0 else 1) * 100) %}
+          {% set bar_pct = (etapa.n / (max_n if max_n > 0 else 1) * 100)|int %}
+          <div style="margin-bottom:13px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+              <span style="font-size:13px;font-weight:600;color:var(--text);">{{ etapa.label }}</span>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span style="font-family:'Encode Sans',sans-serif;font-weight:800;font-size:16px;">{{ etapa.n }}</span>
+                <span class="text-muted text-sm">{{ "%.0f"|format(pct) }}%</span>
+              </div>
+            </div>
+            <div class="progress-bar" style="height:7px;">
+              <div style="height:7px;width:{{ bar_pct }}%;background:{{ stage_colors[loop.index0 % 6] }};border-radius:4px;transition:width .4s;"></div>
+            </div>
+          </div>
+          {% endfor %}
+          {% if pipeline[6:] %}
+          <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border);">
+            <div class="text-sm text-muted" style="margin-bottom:8px;font-weight:600;">Bajas / no activas</div>
+            {% for etapa in pipeline[6:] %}
+            <div style="display:flex;justify-content:space-between;padding:3px 0;font-size:13px;">
+              <span style="color:var(--text-muted);">{{ etapa.label }}</span>
+              <span style="font-weight:700;color:var(--red);">{{ etapa.n }}</span>
+            </div>
+            {% endfor %}
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Indicadores clave</span>
+        </div>
+        <div class="card-body" style="padding:16px 20px;">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+            <div style="background:var(--green-pale,#E8F5E9);border-radius:10px;padding:16px;text-align:center;">
+              <div style="font-family:'Encode Sans',sans-serif;font-size:32px;font-weight:800;color:var(--green);">{{ finalizados }}</div>
+              <div class="text-sm" style="color:var(--green);font-weight:600;margin-top:4px;">Diagnósticos finalizados</div>
+            </div>
+            <div style="background:var(--blue-pale,#E3F2FD);border-radius:10px;padding:16px;text-align:center;">
+              <div style="font-family:'Encode Sans',sans-serif;font-size:32px;font-weight:800;color:var(--blue);">{{ activos }}</div>
+              <div class="text-sm" style="color:var(--blue);font-weight:600;margin-top:4px;">En proceso activo</div>
+            </div>
+            <div style="background:#FFF8E1;border-radius:10px;padding:16px;text-align:center;">
+              <div style="font-family:'Encode Sans',sans-serif;font-size:26px;font-weight:800;color:var(--gold);">${{ "%.1f"|format(total_facturado/1e6) }}M</div>
+              <div class="text-sm" style="color:var(--gold);font-weight:600;margin-top:4px;">Facturado diagnósticos</div>
+            </div>
+            <div style="background:#F3E5F5;border-radius:10px;padding:16px;text-align:center;">
+              <div style="font-family:'Encode Sans',sans-serif;font-size:26px;font-weight:800;color:var(--purple);">{{ "%.0f"|format(finalizados/total*100) }}%</div>
+              <div class="text-sm" style="color:var(--purple);font-weight:600;margin-top:4px;">Tasa de finalización</div>
+            </div>
+          </div>
+          {% if convenios %}
+          <div style="margin-top:14px;padding:12px 16px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;display:flex;align-items:center;gap:10px;">
+            <span class="material-icons-round" style="color:var(--teal);">handshake</span>
+            <div>
+              <div style="font-weight:700;">${{ "%.1f"|format(total_convenios/1e6) }}M en convenios CFI</div>
+              <div class="text-sm text-muted">{{ convenios|length }} convenio{% if convenios|length != 1 %}s{% endif %} activo{% if convenios|length != 1 %}s{% endif %}</div>
+            </div>
+          </div>
+          {% endif %}
+
+          <!-- Top municipios -->
+          <div style="margin-top:16px;">
+            <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:8px;">Top municipios</div>
+            {% for m in por_municipio[:5] %}
+            <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);">
+              <span style="font-weight:600;font-size:13px;flex:1;">{{ m.municipio }}</span>
+              <span class="badge badge-finalizado">{{ m.finalizados }} fin.</span>
+              <span style="font-weight:700;min-width:20px;text-align:right;">{{ m.n }}</span>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Documentación del programa ──────────────────────────── -->
+    <div class="card" style="margin-top:4px;">
+      <div class="card-header">
+        <span class="card-title">
+          <span class="material-icons-round" style="font-size:17px;vertical-align:middle;margin-right:6px;color:var(--teal);">folder_open</span>
+          Documentación del programa
+        </span>
+      </div>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Documento</th>
+              <th>Link al documento</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td colspan="2" class="text-muted text-sm" style="text-align:center;padding:20px;">Sin documentos cargados aún.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
   <!-- ── TAB: Pipeline ──────────────────────────────────────────── -->
-  <div class="tab-content active" data-tab-content="pipeline">
+  <div class="tab-content" data-tab-content="pipeline">
     <div class="grid-2 mb-3">
       <!-- Funnel activo (etapas positivas) -->
       <div class="card">

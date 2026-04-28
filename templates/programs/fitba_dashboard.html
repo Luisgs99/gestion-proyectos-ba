@@ -97,7 +97,7 @@
 <!-- ─── Tabs ────────────────────────────────────────────────────── -->
 <div class="tabs-container">
   <div class="tabs">
-    <button class="tab-btn active" data-tab="overview">Visión general</button>
+    <button class="tab-btn active" data-tab="overview">Vista general</button>
     <button class="tab-btn" data-tab="territorio">Territorio</button>
     <button class="tab-btn" data-tab="actores">Actores</button>
     <button class="tab-btn" data-tab="mapa" id="tab-mapa-btn" onclick="onMapTabClick()">
@@ -176,6 +176,31 @@
           <span id="anr-anio-sublabel" class="text-sm text-muted">Monto total comprometido · nominal</span>
         </div>
         <div class="card-body"><div class="chart-wrap"><canvas id="chart-anr-anio"></canvas></div></div>
+      </div>
+    </div>
+
+    <!-- ── Documentación del programa ──────────────────────────── -->
+    <div class="card" style="margin-top:16px;">
+      <div class="card-header">
+        <span class="card-title">
+          <span class="material-icons-round" style="font-size:17px;vertical-align:middle;margin-right:6px;color:var(--teal);">folder_open</span>
+          Documentación del programa
+        </span>
+      </div>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Documento</th>
+              <th>Link al documento</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td colspan="2" class="text-muted text-sm" style="text-align:center;padding:20px;">Sin documentos cargados aún.</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
   </div>
@@ -406,7 +431,7 @@
           <tbody>
             {% set linea_colors = {'A':'#00AEC3','B':'#592673','C':'#22A954'} %}
             {% for p in proyectos %}
-            <tr data-nombre="{{ p.nombre|lower }}" data-ib="{{ (p.beneficiario or '')|lower }}" data-adoptante="{{ (p.adoptante or '')|lower }}" data-linea="{{ p.linea or '' }}" data-anio="{{ p.anio or '' }}" data-estado="{{ p.estado or '' }}">
+            <tr data-nombre="{{ p.nombre|lower }}" data-ib="{{ (p.ib2 or p.beneficiario or '')|lower }}" data-adoptante="{{ (p.adoptante or '')|lower }}" data-linea="{{ p.linea or '' }}" data-anio="{{ p.anio or '' }}" data-estado="{{ p.estado or '' }}">
               <td class="mono text-sm">{{ p.codigo or '—' }}</td>
               <td style="max-width:200px;">
                 <a href="{{ url_for('proyectos.detail', pid=p.id) }}" style="color:var(--teal);text-decoration:none;font-weight:600;font-size:12.5px;">{{ p.nombre[:55] }}{% if p.nombre|length > 55 %}…{% endif %}</a>
@@ -417,7 +442,7 @@
                 {% else %}—{% endif %}
               </td>
               <td class="text-sm">{{ p.anio or '—' }}</td>
-              <td class="text-sm" style="max-width:140px;">{{ p.beneficiario or '—' }}</td>
+              <td class="text-sm" style="max-width:140px;">{{ p.ib2 or '—' }}</td>
               <td class="text-sm" style="max-width:130px;">{{ p.adoptante or '—' }}</td>
               <td class="text-sm">{{ p.municipio or '—' }}</td>
               <td class="mono text-sm">${{ "%.0f"|format((p.anr_monto or 0)/1000) }}K</td>

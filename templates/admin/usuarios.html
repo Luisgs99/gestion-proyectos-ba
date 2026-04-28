@@ -12,7 +12,9 @@
 <div class="page-header">
   <div class="page-header-left">
     <h1>Gestión de usuarios</h1>
-    <p>{{ users|length }} usuarios registrados en el sistema.</p>
+    <p>{{ users|length }} usuarios registrados
+      ({{ users|selectattr('activo')|list|length }} activos,
+       {{ users|rejectattr('activo')|list|length }} inactivos).</p>
   </div>
 </div>
 
@@ -50,11 +52,19 @@
                 <span class="material-icons-round">edit</span>
               </a>
               {% if u.id != session.user_id %}
-              <form id="del-u-{{ u.id }}" method="post" action="{{ url_for('admin.usuario_eliminar', uid=u.id) }}" style="display:inline;">
-                <button type="button" class="btn btn-danger btn-sm btn-icon" onclick="confirmDelete('¿Eliminar al usuario {{ u.nombre }} {{ u.apellido }}?','del-u-{{ u.id }}')">
-                  <span class="material-icons-round">delete</span>
-                </button>
-              </form>
+                {% if not u.activo %}
+                <form method="post" action="{{ url_for('admin.usuario_reactivar', uid=u.id) }}" style="display:inline;">
+                  <button type="submit" class="btn btn-success btn-sm btn-icon" title="Reactivar usuario">
+                    <span class="material-icons-round">person_add</span>
+                  </button>
+                </form>
+                {% endif %}
+                <form id="del-u-{{ u.id }}" method="post" action="{{ url_for('admin.usuario_eliminar', uid=u.id) }}" style="display:inline;">
+                  <button type="button" class="btn btn-danger btn-sm btn-icon" title="Eliminar (o desactivar si tiene registros)"
+                          onclick="confirmDelete('¿Eliminar al usuario {{ u.nombre }} {{ u.apellido }}? Si tiene registros asociados será desactivado en lugar de eliminado.','del-u-{{ u.id }}')">
+                    <span class="material-icons-round">delete</span>
+                  </button>
+                </form>
               {% endif %}
             </div>
           </td>

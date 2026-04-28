@@ -1,5 +1,6 @@
 import io
 import os
+import re
 import uuid
 import pandas as pd
 from datetime import date
@@ -11,6 +12,10 @@ from helpers.auth import login_required, editor_required, can_edit
 from helpers.ipc import get_ipc_config
 
 bp = Blueprint('instituciones', __name__)
+
+def _word_in(term, text):
+    """Checks whole-word match to avoid UNM matching UNMDP, etc."""
+    return bool(re.search(r'\b' + re.escape(term) + r'\b', text))
 
 TIPOS_DOC = ['convenio', 'estatuto', 'resolucion', 'nota', 'acta', 'otro']
 TIPOS_NOVEDAD = ['reunion', 'comunicacion', 'acuerdo', 'conflicto', 'novedad']
@@ -27,7 +32,7 @@ def _docs_folder():
 # ─── Listado ──────────────────────────────────────────────────────────────────
 @bp.route('/instituciones')
 @login_required
-def list():
+def listado():
     q = request.args.get('q', '').strip()
     tipo = request.args.get('tipo', '')
     estado = request.args.get('estado', '')
@@ -119,7 +124,7 @@ def list():
             benef = (p['beneficiario'] or '').lower()
             ib2   = (p['ib2'] or '').lower()
             for n in nombres:
-                if n in benef or n in ib2:
+                if _word_in(n, benef) or _word_in(n, ib2):
                     n_proy   += 1
                     tot_nom  += p['anr_nom']  or 0
                     tot_real += p['anr_real'] or 0
@@ -167,7 +172,7 @@ def detail(iid):
     inst = query("SELECT * FROM instituciones WHERE id=?", (iid,), one=True)
     if not inst:
         flash('Institución no encontrada.', 'danger')
-        return redirect(url_for('instituciones.list'))
+        return redirect(url_for('instituciones.listado'))
 
     contactos = query("""
         SELECT ic.*, u.nombre as reg_nombre FROM institucion_contactos ic
@@ -229,8 +234,10 @@ def detail(iid):
     proyectos_vinculados = []
     seen_ids = set()
     for t in terminos:
+        t_lower = t.lower()
         rows = query(f"""
-            SELECT p.id, p.nombre, p.codigo, p.estado, p.anio,
+            SELECT p.id, p.nombre, p.codigo, p.estado, p.anio, p.anio_redaccion,
+                   p.beneficiario, p.ib2,
                    {anr_nom_expr}  AS anr_nom,
                    {anr_real_expr} AS anr_real,
                    pr.nombre AS prog_nombre, pr.codigo AS prog_codigo, pr.color AS prog_color
@@ -241,8 +248,13 @@ def detail(iid):
             ORDER BY p.anio IS NULL, p.anio DESC, p.nombre
         """, (f'%{t}%', f'%{t}%'))
         for r in rows:
-            if r['id'] not in seen_ids:
-                proyectos_vinculados.append(dict(r))
+            benef = (r['beneficiario'] or '').lower()
+            ib2   = (r['ib2'] or '').lower()
+            if r['id'] not in seen_ids and (_word_in(t_lower, benef) or _word_in(t_lower, ib2)):
+                d = dict(r)
+                if d['prog_codigo'] == 'ORBITA' and not d.get('anio') and d.get('anio_redaccion'):
+                    d['anio'] = d['anio_redaccion']
+                proyectos_vinculados.append(d)
                 seen_ids.add(r['id'])
 
     # Aggregates for proyectos-tab charts
@@ -288,6 +300,7 @@ def detail(iid):
                            proyectos_vinculados=proyectos_vinculados,
                            tipos_doc=TIPOS_DOC, tipos_novedad=TIPOS_NOVEDAD,
                            tab=tab,
+                           today=date.today().isoformat(),
                            kpi_proy=kpi_proy,
                            by_programa=list(by_programa.values()),
                            by_anio=sorted(by_anio.values(), key=lambda x: x['anio']),
@@ -333,7 +346,7 @@ def editar(iid):
     inst = query("SELECT * FROM instituciones WHERE id=?", (iid,), one=True)
     if not inst:
         flash('Institución no encontrada.', 'danger')
-        return redirect(url_for('instituciones.list'))
+        return redirect(url_for('instituciones.listado'))
     if request.method == 'POST':
         nombre = request.form.get('nombre', '').strip()
         if not nombre:
@@ -371,7 +384,7 @@ def importar():
     file = request.files.get('archivo')
     if not file:
         flash('Seleccioná un archivo Excel.', 'danger')
-        return redirect(url_for('instituciones.list'))
+        return redirect(url_for('instituciones.listado'))
     try:
         df = pd.read_excel(file, engine='openpyxl')
         df.columns = [str(c).strip().lower().replace(' ', '_') for c in df.columns]
@@ -410,7 +423,7 @@ def importar():
         flash(msg, 'success' if not errores else 'warning')
     except Exception as e:
         flash(f'Error al procesar el archivo: {e}', 'danger')
-    return redirect(url_for('instituciones.list'))
+    return redirect(url_for('instituciones.listado'))
 
 
 # ─── Sincronizar desde proyectos FITBA ────────────────────────────────────────
@@ -437,18 +450,23 @@ def sync_fitba():
                     (nombre, 'universidad', 'activo'))
             nuevas += 1
     flash(f'Sincronización completada: {nuevas} instituciones nuevas, {existentes} ya registradas.', 'success')
-    return redirect(url_for('instituciones.list'))
+    return redirect(url_for('instituciones.listado'))
 
 
 @bp.route('/instituciones/sync-proyectos', methods=['POST'])
 @editor_required
 def sync_proyectos():
+    # CLINICA usa beneficiario para la empresa receptora, no para la IB → excluir
     rows = query("""
-        SELECT DISTINCT beneficiario AS nombre FROM proyectos
-        WHERE beneficiario IS NOT NULL AND TRIM(beneficiario) NOT IN ('', '-')
+        SELECT DISTINCT p.beneficiario AS nombre
+        FROM proyectos p
+        JOIN programas pr ON p.programa_id = pr.id
+        WHERE p.beneficiario IS NOT NULL AND TRIM(p.beneficiario) NOT IN ('', '-')
+          AND pr.codigo != 'CLINICA'
         UNION
-        SELECT DISTINCT ib2 AS nombre FROM proyectos
-        WHERE ib2 IS NOT NULL AND TRIM(ib2) NOT IN ('', '-')
+        SELECT DISTINCT p.ib2 AS nombre
+        FROM proyectos p
+        WHERE p.ib2 IS NOT NULL AND TRIM(p.ib2) NOT IN ('', '-')
         ORDER BY nombre
     """)
     nuevas, existentes = 0, 0
@@ -463,7 +481,7 @@ def sync_proyectos():
                     (nombre, 'universidad', 'activo'))
             nuevas += 1
     flash(f'Sincronización completada: {nuevas} instituciones nuevas importadas, {existentes} ya registradas.', 'success')
-    return redirect(url_for('instituciones.list'))
+    return redirect(url_for('instituciones.listado'))
 
 
 # ─── Documentos ───────────────────────────────────────────────────────────────
@@ -472,7 +490,7 @@ def sync_proyectos():
 def subir_doc(iid):
     inst = query("SELECT id FROM instituciones WHERE id=?", (iid,), one=True)
     if not inst:
-        return redirect(url_for('instituciones.list'))
+        return redirect(url_for('instituciones.listado'))
 
     file = request.files.get('archivo')
     nombre_doc = request.form.get('nombre_doc', '').strip()

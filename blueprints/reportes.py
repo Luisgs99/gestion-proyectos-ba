@@ -170,9 +170,16 @@ def index():
         "SELECT DISTINCT municipio FROM proyectos "
         "WHERE municipio IS NOT NULL AND municipio != '' ORDER BY municipio"
     )]
-    instituciones = [r['ib2'] for r in query(
-        "SELECT DISTINCT ib2 FROM proyectos "
-        "WHERE ib2 IS NOT NULL AND ib2 != '' ORDER BY ib2"
+    instituciones = [r['inst'] for r in query(
+        "SELECT inst FROM ("
+        "  SELECT p.ib2 AS inst"
+        "  FROM proyectos p JOIN programas pr ON p.programa_id=pr.id"
+        "  WHERE pr.codigo IN ('FITBA','FONICS') AND p.ib2 IS NOT NULL AND p.ib2 != ''"
+        "  UNION"
+        "  SELECT p.beneficiario AS inst"
+        "  FROM proyectos p JOIN programas pr ON p.programa_id=pr.id"
+        "  WHERE pr.codigo IN ('ORBITA','CLIC') AND p.beneficiario IS NOT NULL AND p.beneficiario != ''"
+        ") ORDER BY inst"
     )]
 
     return render_template('reports/index.html',
@@ -280,8 +287,11 @@ def api_datos():
         where.append('p.municipio=?')
         args.append(municipio_sel)
     if ib2_sel:
-        where.append('p.ib2=?')
-        args.append(ib2_sel)
+        where.append(
+            "((pr.codigo IN ('FITBA','FONICS') AND p.ib2=?)"
+            " OR (pr.codigo IN ('ORBITA','CLIC') AND p.beneficiario=?))"
+        )
+        args.extend([ib2_sel, ib2_sel])
 
     w = ' AND '.join(where)
 

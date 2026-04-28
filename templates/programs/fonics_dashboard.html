@@ -81,13 +81,13 @@
 <!-- Tabs -->
 <div class="tabs-container">
   <div class="tabs">
-    <button class="tab-btn active" data-tab="proyectos">Proyectos ({{ total }})</button>
-    <button class="tab-btn" data-tab="estadisticas">Estadísticas</button>
+    <button class="tab-btn active" data-tab="vista_general">Vista general</button>
+    <button class="tab-btn" data-tab="proyectos">Proyectos ({{ total }})</button>
     <button class="tab-btn" data-tab="hitos">Avance por Hitos</button>
   </div>
 
   <!-- Proyectos -->
-  <div class="tab-content active" data-tab-content="proyectos">
+  <div class="tab-content" data-tab-content="proyectos">
     {% if proyectos %}
     <div class="card">
       <div class="table-wrapper">
@@ -145,8 +145,8 @@
     {% endif %}
   </div>
 
-  <!-- Estadísticas -->
-  <div class="tab-content" data-tab-content="estadisticas">
+  <!-- Vista general -->
+  <div class="tab-content active" data-tab-content="vista_general">
     <div class="grid-2 mb-3">
       <div class="card">
         <div class="card-header"><span class="card-title">Estado de proyectos</span></div>
@@ -170,6 +170,31 @@
           <span class="card-title" id="fn-chart-ib-title">Top beneficiarios por proyectos</span>
         </div>
         <div class="card-body"><div class="chart-wrap-lg"><canvas id="chart-ib"></canvas></div></div>
+      </div>
+    </div>
+
+    <!-- ── Documentación del programa ──────────────────────────── -->
+    <div class="card" style="margin-top:16px;">
+      <div class="card-header">
+        <span class="card-title">
+          <span class="material-icons-round" style="font-size:17px;vertical-align:middle;margin-right:6px;color:var(--teal);">folder_open</span>
+          Documentación del programa
+        </span>
+      </div>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Documento</th>
+              <th>Link al documento</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td colspan="2" class="text-muted text-sm" style="text-align:center;padding:20px;">Sin documentos cargados aún.</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
   </div>

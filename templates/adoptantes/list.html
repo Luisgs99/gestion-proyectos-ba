@@ -126,7 +126,12 @@
             data-programa="{{ m.programas or '' }}"
             data-municipio="{{ m.municipio or '' }}"
             data-proyectos="{{ m.n_proyectos }}">
-          <td style="font-weight:600;">{{ m.adoptante }}</td>
+          <td style="font-weight:600;">
+            <a href="{{ url_for('municipios.detail', nombre=m.adoptante) }}"
+               style="color:var(--blue);text-decoration:none;">
+              {{ m.adoptante }}
+            </a>
+          </td>
           <td class="text-sm">{{ m.municipio or '—' }}</td>
           <td>
             {% for i in range(prog_list|length) %}

@@ -81,7 +81,7 @@
 <!-- Tabs -->
 <div class="tabs-container">
   <div class="tabs">
-    <button class="tab-btn active" data-tab="overview">Visión general</button>
+    <button class="tab-btn active" data-tab="overview">Vista general</button>
     <button class="tab-btn" data-tab="documentos">Documentos ({{ total }})</button>
   </div>
 
@@ -197,6 +197,31 @@
       </div>
     </div>
 
+    <!-- ── Documentación del programa ──────────────────────────── -->
+    <div class="card" style="margin-top:16px;">
+      <div class="card-header">
+        <span class="card-title">
+          <span class="material-icons-round" style="font-size:17px;vertical-align:middle;margin-right:6px;color:var(--teal);">folder_open</span>
+          Documentación del programa
+        </span>
+      </div>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Documento</th>
+              <th>Link al documento</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td colspan="2" class="text-muted text-sm" style="text-align:center;padding:20px;">Sin documentos cargados aún.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
   </div><!-- /overview -->
 
   <!-- TAB: Documentos -->
@@ -282,13 +307,13 @@
                   data-titulo="{{ p.nombre|lower }}"
                   data-linea="{{ p.linea or '' }}"
                   data-estado="{{ p.situacion_clinica or '' }}"
-                  data-ib="{{ p.ib2 or '' }}"
+                  data-ib="{{ p.beneficiario or '' }}"
                   data-group-id="{{ ns.gidx }}">
                 <td class="mono text-sm" style="color:var(--text-muted);padding-left:20px;">{{ p.codigo or '—' }}</td>
                 <td style="max-width:260px;padding-left:20px;">
                   <span style="color:var(--text-muted);margin-right:4px;">↳</span>
                   <a href="{{ url_for('proyectos.detail', pid=p.id) }}" style="font-weight:600;color:var(--teal);text-decoration:none;font-size:13px;">
-                    {{ p.ib2 or '(sin IB)' }}
+                    {{ p.beneficiario or '(sin IB)' }}
                   </a>
                 </td>
                 <td>
@@ -298,7 +323,7 @@
                   </span>
                   {% else %}—{% endif %}
                 </td>
-                <td style="font-weight:600;font-size:13px;">{{ p.ib2 or '—' }}</td>
+                <td style="font-weight:600;font-size:13px;">{{ p.beneficiario or '—' }}</td>
                 <td class="text-sm">{{ p.anio_redaccion or '—' }}</td>
                 <td class="text-sm">{{ p.anio_publicacion or '—' }}</td>
                 <td class="mono text-sm orb-table-anr"
@@ -318,7 +343,7 @@
               {% else %}
               {# ── Fila normal (un solo documento para ese título) ─────── #}
               {% set p = grupo.docs[0] %}
-              <tr data-titulo="{{ p.nombre|lower }}" data-linea="{{ p.linea or '' }}" data-estado="{{ p.situacion_clinica or '' }}" data-ib="{{ p.ib2 or '' }}">
+              <tr data-titulo="{{ p.nombre|lower }}" data-linea="{{ p.linea or '' }}" data-estado="{{ p.situacion_clinica or '' }}" data-ib="{{ p.beneficiario or '' }}">
                 <td class="mono text-sm" style="color:var(--text-muted);">{{ p.codigo }}</td>
                 <td style="max-width:260px;">
                   <a href="{{ url_for('proyectos.detail', pid=p.id) }}" style="font-weight:600;color:var(--teal);text-decoration:none;font-size:13px;">
@@ -332,7 +357,7 @@
                   </span>
                   {% else %}—{% endif %}
                 </td>
-                <td style="font-weight:600;font-size:13px;">{{ p.ib2 or '—' }}</td>
+                <td style="font-weight:600;font-size:13px;">{{ p.beneficiario or '—' }}</td>
                 <td class="text-sm">{{ p.anio_redaccion or '—' }}</td>
                 <td class="text-sm">{{ p.anio_publicacion or '—' }}</td>
                 <td class="mono text-sm orb-table-anr"

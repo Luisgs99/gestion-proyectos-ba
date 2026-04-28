@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{% if inst %}Editar — {{ inst.nombre }}{% else %}Nueva institución{% endif %}{% endblock %}
 {% block breadcrumb %}
-  <a href="{{ url_for('instituciones.list') }}" style="color:var(--text-muted);text-decoration:none;">Instituciones</a>
+  <a href="{{ url_for('instituciones.listado') }}" style="color:var(--text-muted);text-decoration:none;">Instituciones</a>
   {% if inst %}/ <a href="{{ url_for('instituciones.detail', iid=inst.id) }}" style="color:var(--text-muted);text-decoration:none;">{{ inst.nombre }}</a>{% endif %}
   / {% if inst %}Editar{% else %}Nueva{% endif %}
 {% endblock %}
@@ -84,7 +84,7 @@
         {% if inst %}
         <a href="{{ url_for('instituciones.detail', iid=inst.id) }}" class="btn btn-secondary">Cancelar</a>
         {% else %}
-        <a href="{{ url_for('instituciones.list') }}" class="btn btn-secondary">Cancelar</a>
+        <a href="{{ url_for('instituciones.listado') }}" class="btn btn-secondary">Cancelar</a>
         {% endif %}
       </div>
     </form>
