@@ -1,10 +1,20 @@
+import os
+import uuid
 from collections import defaultdict
-from flask import Blueprint, render_template, redirect, url_for, flash, session
-from database import query
-from helpers.auth import login_required
+from werkzeug.utils import secure_filename
+from flask import (Blueprint, render_template, redirect, url_for,
+                   flash, session, request, send_file, current_app)
+from database import query, execute
+from helpers.auth import login_required, editor_required, can_edit
 from helpers.ipc import build_ipc_join, get_ipc_config, ipc_anr_expr
 
 bp = Blueprint('programas', __name__)
+
+
+def _prog_docs_folder():
+    folder = os.path.join(current_app.config['UPLOAD_FOLDER'], 'programas')
+    os.makedirs(folder, exist_ok=True)
+    return folder
 
 
 # ─── Listado ──────────────────────────────────────────────────────────────────
@@ -400,6 +410,14 @@ def _orbita_detail(pid, programa, proyectos, hitos):
             'total_anr_real': sum((d.get('anr_real') or 0) for d in docs),
         })
 
+    docs_programa = query("""
+        SELECT pd.*, u.nombre || ' ' || u.apellido as subido_por_nombre
+        FROM programa_documentos pd
+        LEFT JOIN users u ON pd.subido_por = u.id
+        WHERE pd.programa_id = ?
+        ORDER BY pd.created_at DESC
+    """, (pid,))
+
     return render_template('programs/orbita_dashboard.html',
         programa=programa, proyectos=proyectos_enrich, hitos=hitos,
         total=total, publicados=publicados, en_proceso=en_proceso,
@@ -411,17 +429,20 @@ def _orbita_detail(pid, programa, proyectos, hitos):
         por_anio=[dict(r) for r in por_anio],
         por_anio_pub=[dict(r) for r in por_anio_pub],
         grupos_list=grupos_list,
+        docs_programa=[dict(r) for r in docs_programa],
     )
 
 
 # ─── Dashboard CLÍNICA TECNOLÓGICA ────────────────────────────────────────────
 def _clinica_detail(pid, programa, proyectos, hitos):
+    _SIT = "AND (situacion_clinica IS NOT NULL AND TRIM(situacion_clinica) != '')"
+    proyectos    = [p for p in proyectos if p['situacion_clinica'] and p['situacion_clinica'].strip()]
     total        = len(proyectos)
-    finalizados  = query("SELECT COUNT(*) as n FROM proyectos WHERE programa_id=? AND estado='finalizado'", (pid,), one=True)['n']
-    activos      = query("SELECT COUNT(*) as n FROM proyectos WHERE programa_id=? AND estado='activo'", (pid,), one=True)['n']
-    en_fin       = query("SELECT COUNT(*) as n FROM proyectos WHERE programa_id=? AND estado='en_finalizacion'", (pid,), one=True)['n']
-    suspendidos  = query("SELECT COUNT(*) as n FROM proyectos WHERE programa_id=? AND estado='suspendido'", (pid,), one=True)['n']
-    con_monto    = query("SELECT COUNT(*) as n, COALESCE(SUM(monto_diagnostico),0) as s FROM proyectos WHERE programa_id=? AND monto_diagnostico IS NOT NULL", (pid,), one=True)
+    finalizados  = query(f"SELECT COUNT(*) as n FROM proyectos WHERE programa_id=? {_SIT} AND estado='finalizado'", (pid,), one=True)['n']
+    activos      = query(f"SELECT COUNT(*) as n FROM proyectos WHERE programa_id=? {_SIT} AND estado='activo'", (pid,), one=True)['n']
+    en_fin       = query(f"SELECT COUNT(*) as n FROM proyectos WHERE programa_id=? {_SIT} AND estado='en_finalizacion'", (pid,), one=True)['n']
+    suspendidos  = query(f"SELECT COUNT(*) as n FROM proyectos WHERE programa_id=? {_SIT} AND estado='suspendido'", (pid,), one=True)['n']
+    con_monto    = query(f"SELECT COUNT(*) as n, COALESCE(SUM(monto_diagnostico),0) as s FROM proyectos WHERE programa_id=? {_SIT} AND monto_diagnostico IS NOT NULL", (pid,), one=True)
     total_facturado = con_monto['s']
     monto_promedio  = total_facturado / con_monto['n'] if con_monto['n'] > 0 else 0
 
@@ -448,58 +469,61 @@ def _clinica_detail(pid, programa, proyectos, hitos):
         '0.Municipio no priorizado': 'Municipio no priorizado',
     }
     sit_raw = {r['situacion_clinica']: r['n'] for r in query(
-        "SELECT situacion_clinica, COUNT(*) as n FROM proyectos WHERE programa_id=? AND situacion_clinica IS NOT NULL GROUP BY situacion_clinica", (pid,))}
+        f"SELECT situacion_clinica, COUNT(*) as n FROM proyectos WHERE programa_id=? {_SIT} GROUP BY situacion_clinica", (pid,))}
     pipeline = [{'situacion': s, 'label': LABELS_SIT.get(s, s), 'n': sit_raw.get(s, 0)} for s in ORDEN_SIT]
 
-    por_anio = query("""
+    por_anio = query(f"""
         SELECT anio_aprobacion as anio, COUNT(*) as n,
                SUM(CASE WHEN estado='finalizado' THEN 1 ELSE 0 END) as finalizados,
                SUM(CASE WHEN estado='activo'     THEN 1 ELSE 0 END) as activos,
                SUM(CASE WHEN estado='suspendido' THEN 1 ELSE 0 END) as suspendidos
-        FROM proyectos WHERE programa_id=? AND anio_aprobacion IS NOT NULL
+        FROM proyectos WHERE programa_id=? {_SIT} AND anio_aprobacion IS NOT NULL
         GROUP BY anio_aprobacion ORDER BY anio_aprobacion
     """, (pid,))
 
-    por_municipio = query("""
+    por_municipio = query(f"""
         SELECT municipio, COUNT(*) as n,
                SUM(CASE WHEN estado='finalizado' THEN 1 ELSE 0 END) as finalizados
-        FROM proyectos WHERE programa_id=? AND municipio IS NOT NULL
+        FROM proyectos WHERE programa_id=? {_SIT} AND municipio IS NOT NULL
         GROUP BY municipio ORDER BY n DESC LIMIT 20
     """, (pid,))
 
-    mapa_municipios_clinica = query("""
+    mapa_municipios_clinica = query(f"""
         SELECT municipio, COUNT(*) as n,
                SUM(CASE WHEN estado='finalizado' THEN 1 ELSE 0 END) as finalizados
-        FROM proyectos WHERE programa_id=? AND municipio IS NOT NULL AND municipio != ''
+        FROM proyectos WHERE programa_id=? {_SIT} AND municipio IS NOT NULL AND municipio != ''
         GROUP BY municipio ORDER BY finalizados DESC
     """, (pid,))
 
-    rubros_raw = query("""
+    rubros_raw = query(f"""
         SELECT rubro, COUNT(*) as n FROM proyectos
-        WHERE programa_id=? AND rubro IS NOT NULL
+        WHERE programa_id=? {_SIT} AND rubro IS NOT NULL
         GROUP BY rubro ORDER BY n DESC LIMIT 18
     """, (pid,))
 
-    por_especialista = query("""
+    _FIN_CLINICA  = "situacion_clinica='5.Diagnóstico Finalizado'"
+    _BAJA_CLINICA = "situacion_clinica IN ('2.Empresa no interesada','0.Empresa no válida','0.Municipio no priorizado')"
+
+    por_especialista = query(f"""
         SELECT especialista,
                COUNT(*) as n,
-               SUM(CASE WHEN estado='finalizado' THEN 1 ELSE 0 END) as finalizados,
-               SUM(CASE WHEN estado='suspendido' THEN 1 ELSE 0 END) as bajas,
+               SUM(CASE WHEN {_FIN_CLINICA}  THEN 1 ELSE 0 END) as finalizados,
+               SUM(CASE WHEN {_BAJA_CLINICA} THEN 1 ELSE 0 END) as bajas,
                COALESCE(AVG(CASE WHEN monto_diagnostico IS NOT NULL THEN monto_diagnostico END), 0) as monto_avg
         FROM proyectos
-        WHERE programa_id=? AND especialista IS NOT NULL AND especialista NOT IN ('-')
+        WHERE programa_id=? {_SIT} AND especialista IS NOT NULL AND especialista NOT IN ('-')
         GROUP BY especialista ORDER BY n DESC LIMIT 20
     """, (pid,))
 
-    estado_emp_dist = query("""
+    estado_emp_dist = query(f"""
         SELECT estado_empresa, COUNT(*) as n
-        FROM proyectos WHERE programa_id=? AND estado_empresa IS NOT NULL
+        FROM proyectos WHERE programa_id=? {_SIT} AND estado_empresa IS NOT NULL
         GROUP BY estado_empresa ORDER BY estado_empresa
     """, (pid,))
 
-    por_periodo = query("""
+    por_periodo = query(f"""
         SELECT periodo_facturacion, COUNT(*) as n, SUM(monto_diagnostico) as total
-        FROM proyectos WHERE programa_id=? AND periodo_facturacion IS NOT NULL
+        FROM proyectos WHERE programa_id=? {_SIT} AND periodo_facturacion IS NOT NULL
         GROUP BY periodo_facturacion ORDER BY periodo_facturacion DESC LIMIT 12
     """, (pid,))
 
@@ -515,7 +539,7 @@ def _clinica_detail(pid, programa, proyectos, hitos):
 
     total_real_row = query(
         "SELECT COALESCE(SUM(" + real_expr + "),0) as s FROM proyectos p " + IPC_JOIN +
-        " WHERE p.programa_id=? AND p.monto_diagnostico IS NOT NULL",
+        f" WHERE p.programa_id=? {_SIT} AND p.monto_diagnostico IS NOT NULL",
         (pid,), one=True)
     total_facturado_real = total_real_row['s'] if total_real_row else 0
 
@@ -533,14 +557,14 @@ def _clinica_detail(pid, programa, proyectos, hitos):
 
     por_esp_real = query(
         "SELECT p.especialista, COUNT(*) as n,"
-        " SUM(CASE WHEN p.estado='finalizado' THEN 1 ELSE 0 END) as finalizados,"
-        " SUM(CASE WHEN p.estado='suspendido' THEN 1 ELSE 0 END) as bajas,"
+        f" SUM(CASE WHEN p.{_FIN_CLINICA}  THEN 1 ELSE 0 END) as finalizados,"
+        f" SUM(CASE WHEN p.{_BAJA_CLINICA} THEN 1 ELSE 0 END) as bajas,"
         " COALESCE(AVG(CASE WHEN p.monto_diagnostico IS NOT NULL THEN p.monto_diagnostico END),0) as monto_avg,"
         " COALESCE(AVG(CASE WHEN p.monto_diagnostico IS NOT NULL THEN " + real_expr + " END),0) as monto_avg_real,"
         " COALESCE(SUM(p.monto_diagnostico),0) as total_nom,"
         " COALESCE(SUM(" + real_expr + "),0) as total_real"
         " FROM proyectos p " + IPC_JOIN +
-        " WHERE p.programa_id=? AND p.especialista IS NOT NULL AND p.especialista NOT IN ('-')"
+        f" WHERE p.programa_id=? {_SIT} AND p.especialista IS NOT NULL AND p.especialista NOT IN ('-')"
         " GROUP BY p.especialista ORDER BY n DESC LIMIT 20",
         (pid,))
 
@@ -553,6 +577,19 @@ def _clinica_detail(pid, programa, proyectos, hitos):
         d['total_nom']      = real.get('total_nom', 0)
         d['total_real']     = real.get('total_real', 0)
         por_especialista_merged.append(d)
+
+    esp_proyectos_for_js = [
+        {
+            'nombre':      p['nombre'],
+            'sit':         p['situacion_clinica'] or '',
+            'municipio':   p['municipio'] or '',
+            'especialista': p['especialista'] or '',
+            'monto':       p['monto_diagnostico'] or 0,
+            'anio':        p['anio_aprobacion'],
+        }
+        for p in proyectos
+        if p['especialista'] and p['especialista'] not in ('-', '')
+    ]
 
     return render_template('programs/clinica_dashboard.html',
         programa=programa, proyectos=proyectos, hitos=hitos,
@@ -574,6 +611,7 @@ def _clinica_detail(pid, programa, proyectos, hitos):
         estado_emp_dist=[dict(r) for r in estado_emp_dist],
         por_periodo=[dict(r) for r in por_periodo],
         mapa_municipios_clinica=[dict(r) for r in mapa_municipios_clinica],
+        esp_proyectos_for_js=esp_proyectos_for_js,
     )
 
 
@@ -768,3 +806,73 @@ def _clic_detail(pid, programa, proyectos, hitos):
         total_iniciaron=total_iniciaron,
         total_finalizaron=total_finalizaron,
     )
+
+
+# ─── Documentación de programa ────────────────────────────────────────────────
+@bp.route('/programas/<int:pid>/documentacion/subir', methods=['POST'])
+@editor_required
+def subir_doc_programa(pid):
+    programa = query("SELECT id FROM programas WHERE id=?", (pid,), one=True)
+    if not programa:
+        return redirect(url_for('programas.list'))
+
+    file = request.files.get('archivo')
+    nombre_doc = request.form.get('nombre_doc', '').strip()
+    if not file or not nombre_doc:
+        flash('Nombre y archivo son obligatorios.', 'danger')
+        return redirect(url_for('programas.detail', pid=pid) + '#documentacion')
+
+    ext = os.path.splitext(secure_filename(file.filename))[1]
+    stored_name = f"{uuid.uuid4().hex}{ext}"
+    file.save(os.path.join(_prog_docs_folder(), stored_name))
+
+    execute("""
+        INSERT INTO programa_documentos (programa_id, nombre_doc, filename, descripcion, subido_por)
+        VALUES (?,?,?,?,?)
+    """, (pid, nombre_doc, stored_name,
+          request.form.get('descripcion', '').strip() or None,
+          session['user_id']))
+    flash('Documento subido correctamente.', 'success')
+    return redirect(url_for('programas.detail', pid=pid))
+
+
+@bp.route('/programas/<int:pid>/documentacion/<int:did>/ver')
+@login_required
+def ver_doc_programa(pid, did):
+    doc = query("SELECT * FROM programa_documentos WHERE id=? AND programa_id=?", (did, pid), one=True)
+    if not doc:
+        flash('Documento no encontrado.', 'danger')
+        return redirect(url_for('programas.detail', pid=pid))
+    path = os.path.join(_prog_docs_folder(), doc['filename'])
+    if not os.path.exists(path):
+        flash('Archivo no encontrado en el servidor.', 'danger')
+        return redirect(url_for('programas.detail', pid=pid))
+    return send_file(path, as_attachment=False, mimetype='application/pdf')
+
+
+@bp.route('/programas/<int:pid>/documentacion/<int:did>/descargar')
+@login_required
+def descargar_doc_programa(pid, did):
+    doc = query("SELECT * FROM programa_documentos WHERE id=? AND programa_id=?", (did, pid), one=True)
+    if not doc:
+        flash('Documento no encontrado.', 'danger')
+        return redirect(url_for('programas.detail', pid=pid))
+    path = os.path.join(_prog_docs_folder(), doc['filename'])
+    if not os.path.exists(path):
+        flash('Archivo no encontrado en el servidor.', 'danger')
+        return redirect(url_for('programas.detail', pid=pid))
+    ext = os.path.splitext(doc['filename'])[1]
+    return send_file(path, as_attachment=True, download_name=f"{doc['nombre_doc']}{ext}")
+
+
+@bp.route('/programas/<int:pid>/documentacion/<int:did>/eliminar', methods=['POST'])
+@editor_required
+def eliminar_doc_programa(pid, did):
+    doc = query("SELECT * FROM programa_documentos WHERE id=? AND programa_id=?", (did, pid), one=True)
+    if doc:
+        path = os.path.join(_prog_docs_folder(), doc['filename'])
+        if os.path.exists(path):
+            os.remove(path)
+        execute("DELETE FROM programa_documentos WHERE id=?", (did,))
+        flash('Documento eliminado.', 'success')
+    return redirect(url_for('programas.detail', pid=pid))

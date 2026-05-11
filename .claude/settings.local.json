@@ -19,7 +19,9 @@
       "Bash(py -c ' *)",
       "Bash(sqlite3 proyectos_ba.db \"SELECT id, nombre, ib2, codigo FROM proyectos WHERE nombre LIKE '%Nuevos materiales%';\")",
       "Bash(xargs grep *)",
-      "Bash(sqlite3 *)"
+      "Bash(sqlite3 *)",
+      "Bash(py update_instituciones.py)",
+      "Bash(del *)"
     ]
   }
 }

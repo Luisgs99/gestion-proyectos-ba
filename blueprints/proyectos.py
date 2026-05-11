@@ -1,10 +1,19 @@
+import os
+import uuid
 from datetime import date
-from flask import Blueprint, render_template, request, redirect, url_for, session, flash, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, session, flash, jsonify, send_file, current_app
+from werkzeug.utils import secure_filename
 from database import query, execute
 from helpers.auth import login_required, editor_required, admin_required
 from helpers.filtros import get_filtros_config, get_filter_options, apply_filtros
 
 bp = Blueprint('proyectos', __name__)
+
+
+def _adjuntos_folder():
+    folder = os.path.join(current_app.config['UPLOAD_FOLDER'], 'proyectos')
+    os.makedirs(folder, exist_ok=True)
+    return folder
 
 
 @bp.route('/proyectos')
@@ -133,6 +142,14 @@ def detail(pid):
         ORDER BY n.fecha DESC, n.created_at DESC
     """, (pid,))
 
+    adjuntos = query("""
+        SELECT a.*, u.nombre as subido_por_nombre, u.apellido as subido_por_apellido
+        FROM proyecto_adjuntos a
+        LEFT JOIN users u ON a.subido_por = u.id
+        WHERE a.proyecto_id=?
+        ORDER BY a.created_at DESC
+    """, (pid,))
+
     if session.get('rol') == 'agente':
         is_assigned = query("""
             SELECT 1 FROM proyectos WHERE id=? AND agente_id=?
@@ -148,6 +165,7 @@ def detail(pid):
 
     return render_template('projects/detail.html',
         proyecto=proyecto, hitos_avances=hitos_avances, novedades=novedades,
+        adjuntos=adjuntos,
         completados=completados, total_hitos=total_hitos, porcentaje=porcentaje,
         tiene_etapas=tiene_etapas)
 
@@ -241,12 +259,88 @@ def agregar_novedad(pid):
 @bp.route('/proyectos/<int:pid>/eliminar', methods=['POST'])
 @admin_required
 def eliminar(pid):
+    adjuntos = query("SELECT filename FROM proyecto_adjuntos WHERE proyecto_id=?", (pid,))
+    for a in adjuntos:
+        path = os.path.join(current_app.config['UPLOAD_FOLDER'], 'proyectos', a['filename'])
+        if os.path.exists(path):
+            os.remove(path)
+    execute("DELETE FROM proyecto_adjuntos WHERE proyecto_id=?", (pid,))
     execute("DELETE FROM avances_hitos WHERE proyecto_id=?", (pid,))
     execute("DELETE FROM novedades WHERE proyecto_id=?", (pid,))
     execute("DELETE FROM asignaciones WHERE proyecto_id=?", (pid,))
     execute("DELETE FROM proyectos WHERE id=?", (pid,))
     flash('Proyecto eliminado.', 'success')
     return redirect(url_for('proyectos.list'))
+
+
+# ─── Adjuntos por proyecto ────────────────────────────────────────────────────
+@bp.route('/proyectos/<int:pid>/adjuntos/subir', methods=['POST'])
+@editor_required
+def subir_adjunto(pid):
+    proyecto = query("SELECT id FROM proyectos WHERE id=?", (pid,), one=True)
+    if not proyecto:
+        return redirect(url_for('proyectos.list'))
+
+    file = request.files.get('archivo')
+    nombre_doc = request.form.get('nombre_doc', '').strip()
+    if not file or not nombre_doc:
+        flash('Nombre y archivo son obligatorios.', 'danger')
+        return redirect(url_for('proyectos.detail', pid=pid))
+
+    ext = os.path.splitext(secure_filename(file.filename))[1]
+    stored_name = f"{uuid.uuid4().hex}{ext}"
+    file.save(os.path.join(_adjuntos_folder(), stored_name))
+
+    execute("""
+        INSERT INTO proyecto_adjuntos (proyecto_id, nombre_doc, filename, descripcion, subido_por)
+        VALUES (?,?,?,?,?)
+    """, (pid, nombre_doc, stored_name,
+          request.form.get('descripcion', '').strip() or None,
+          session['user_id']))
+    flash('Archivo subido correctamente.', 'success')
+    return redirect(url_for('proyectos.detail', pid=pid))
+
+
+@bp.route('/proyectos/<int:pid>/adjuntos/<int:fid>/ver')
+@login_required
+def ver_adjunto(pid, fid):
+    doc = query("SELECT * FROM proyecto_adjuntos WHERE id=? AND proyecto_id=?", (fid, pid), one=True)
+    if not doc:
+        flash('Archivo no encontrado.', 'danger')
+        return redirect(url_for('proyectos.detail', pid=pid))
+    path = os.path.join(_adjuntos_folder(), doc['filename'])
+    if not os.path.exists(path):
+        flash('Archivo no encontrado en el servidor.', 'danger')
+        return redirect(url_for('proyectos.detail', pid=pid))
+    return send_file(path, as_attachment=False, mimetype='application/pdf')
+
+
+@bp.route('/proyectos/<int:pid>/adjuntos/<int:fid>/descargar')
+@login_required
+def descargar_adjunto(pid, fid):
+    doc = query("SELECT * FROM proyecto_adjuntos WHERE id=? AND proyecto_id=?", (fid, pid), one=True)
+    if not doc:
+        flash('Archivo no encontrado.', 'danger')
+        return redirect(url_for('proyectos.detail', pid=pid))
+    path = os.path.join(_adjuntos_folder(), doc['filename'])
+    if not os.path.exists(path):
+        flash('Archivo no encontrado en el servidor.', 'danger')
+        return redirect(url_for('proyectos.detail', pid=pid))
+    ext = os.path.splitext(doc['filename'])[1]
+    return send_file(path, as_attachment=True, download_name=f"{doc['nombre_doc']}{ext}")
+
+
+@bp.route('/proyectos/<int:pid>/adjuntos/<int:fid>/eliminar', methods=['POST'])
+@editor_required
+def eliminar_adjunto(pid, fid):
+    doc = query("SELECT * FROM proyecto_adjuntos WHERE id=? AND proyecto_id=?", (fid, pid), one=True)
+    if doc:
+        path = os.path.join(_adjuntos_folder(), doc['filename'])
+        if os.path.exists(path):
+            os.remove(path)
+        execute("DELETE FROM proyecto_adjuntos WHERE id=?", (fid,))
+        flash('Archivo eliminado.', 'success')
+    return redirect(url_for('proyectos.detail', pid=pid))
 
 
 @bp.route('/api/programa/<int:pid>/stats')

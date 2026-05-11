@@ -30,7 +30,7 @@
           <label class="form-label">Tipo</label>
           <select name="tipo" class="form-control">
             {% for t in tipos %}
-            <option value="{{ t }}" {% if inst and inst.tipo == t %}selected{% endif %}>{{ t|capitalize }}</option>
+            <option value="{{ t }}" {% if inst and inst.tipo == t %}selected{% endif %}>{{ 'UVT' if t == 'uvt' else t|capitalize }}</option>
             {% endfor %}
           </select>
         </div>
@@ -45,11 +45,6 @@
           <label class="form-label">Municipio</label>
           <input type="text" name="municipio" class="form-control"
                  value="{{ inst.municipio if inst and inst.municipio else '' }}">
-        </div>
-        <div>
-          <label class="form-label">Localidad</label>
-          <input type="text" name="localidad" class="form-control"
-                 value="{{ inst.localidad if inst and inst.localidad else '' }}">
         </div>
         <div>
           <label class="form-label">Provincia</label>

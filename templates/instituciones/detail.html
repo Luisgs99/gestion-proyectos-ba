@@ -75,7 +75,6 @@
       <dt class="text-muted">Tipo</dt><dd><span class="badge badge-outline">{{ inst.tipo }}</span></dd>
       <dt class="text-muted">CUIT</dt><dd>{{ inst.cuit or '—' }}</dd>
       <dt class="text-muted">Municipio</dt><dd>{{ inst.municipio or '—' }}</dd>
-      <dt class="text-muted">Localidad</dt><dd>{{ inst.localidad or '—' }}</dd>
       <dt class="text-muted">Provincia</dt><dd>{{ inst.provincia or 'Buenos Aires' }}</dd>
       <dt class="text-muted">Sitio web</dt>
       <dd>
@@ -293,14 +292,18 @@
           {% if d.descripcion %}<div style="font-size:12px;color:var(--text-secondary);margin-top:4px;">{{ d.descripcion }}</div>{% endif %}
         </div>
         <div style="display:flex;gap:4px;flex-shrink:0;">
+          <button class="btn btn-secondary btn-sm btn-icon" title="Vista previa"
+                  onclick="abrirPdfPreview('{{ url_for('instituciones.ver_doc', iid=inst.id, did=d.id) }}', '{{ d.nombre_doc|e }}')">
+            <span class="material-icons-round" style="font-size:15px;">visibility</span>
+          </button>
           <a href="{{ url_for('instituciones.descargar_doc', iid=inst.id, did=d.id) }}"
-             class="btn btn-secondary btn-sm" title="Descargar">
+             class="btn btn-secondary btn-sm btn-icon" title="Descargar">
             <span class="material-icons-round" style="font-size:15px;">download</span>
           </a>
           {% if can_edit() %}
           <form method="post" action="{{ url_for('instituciones.eliminar_doc', iid=inst.id, did=d.id) }}"
                 onsubmit="return confirm('¿Eliminar este documento?')">
-            <button type="submit" class="btn btn-sm" style="background:none;color:var(--text-muted);padding:6px;">
+            <button type="submit" class="btn btn-sm btn-icon" style="background:none;color:var(--text-muted);padding:6px;">
               <span class="material-icons-round" style="font-size:16px;">delete</span>
             </button>
           </form>
@@ -356,33 +359,47 @@
 {% elif tab == 'proyectos' %}
 {% if proyectos_vinculados %}
 
-<!-- ANR switch -->
-<div style="display:flex;justify-content:flex-end;align-items:center;gap:6px;margin-bottom:12px;">
-  <span style="font-size:12px;color:var(--text-muted);">ANR:</span>
-  <button id="anr-nom-btn" class="tab-btn active" onclick="setAnrMode('nominal')" style="font-size:11px;padding:3px 10px;">Nominal</button>
-  <button id="anr-real-btn" class="tab-btn" onclick="setAnrMode('real')" style="font-size:11px;padding:3px 10px;">Real <span style="font-size:10px;opacity:.7;">({{ ipc_fecha_val }})</span></button>
+<!-- Switches: filtro estado + ANR -->
+<div style="display:flex;justify-content:flex-end;align-items:center;gap:14px;margin-bottom:12px;flex-wrap:wrap;">
+  <div style="display:flex;align-items:center;gap:6px;">
+    <span style="font-size:12px;color:var(--text-muted);">Proyectos:</span>
+    <div style="display:flex;align-items:center;gap:2px;background:var(--surface-2);border:1.5px solid var(--border);border-radius:8px;padding:3px;">
+      <button id="fil-todos-btn"   class="metric-btn metric-btn-active" onclick="setFiltroEstado('todos')">Todos</button>
+      <button id="fil-activos-btn" class="metric-btn"                   onclick="setFiltroEstado('activos')">Solo activos</button>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:6px;">
+    <span style="font-size:12px;color:var(--text-muted);">ANR:</span>
+    <button id="anr-nom-btn" class="tab-btn active" onclick="setAnrMode('nominal')" style="font-size:11px;padding:3px 10px;">Nominal</button>
+    <button id="anr-real-btn" class="tab-btn" onclick="setAnrMode('real')" style="font-size:11px;padding:3px 10px;">Real <span style="font-size:10px;opacity:.7;">({{ ipc_fecha_val }})</span></button>
+  </div>
 </div>
 
 <!-- KPI mini-cards -->
 <div class="grid-4 mb-3">
   <div class="card card-body" style="text-align:center;padding:14px;">
-    <div style="font-size:26px;font-weight:700;color:var(--blue);">{{ kpi_proy.total }}</div>
+    <div id="kpi-total" data-todos="{{ kpi_proy.total }}" data-act="{{ kpi_proy.total_act }}"
+         style="font-size:26px;font-weight:700;color:var(--blue);">{{ kpi_proy.total }}</div>
     <div class="text-sm text-muted">Proyectos</div>
   </div>
   <div class="card card-body" style="text-align:center;padding:14px;">
     <div id="kpi-anr-total"
          data-nom="{{ kpi_proy.total_anr_nom|int }}"
          data-real="{{ kpi_proy.total_anr_real|int }}"
+         data-nom-act="{{ kpi_proy.total_anr_nom_act|int }}"
+         data-real-act="{{ kpi_proy.total_anr_real_act|int }}"
          style="font-size:20px;font-weight:700;color:var(--orange);">{{ fmt_anr(kpi_proy.total_anr_nom) }}</div>
     <div class="text-sm text-muted">ANR total <span id="kpi-anr-lbl" style="font-size:10px;">(nominal)</span></div>
   </div>
   <div class="card card-body" style="text-align:center;padding:14px;">
-    <div style="font-size:26px;font-weight:700;color:var(--green);">{{ kpi_proy.n_programas }}</div>
-    <div class="text-sm text-muted">Programa{{ 's' if kpi_proy.n_programas != 1 }}</div>
+    <div id="kpi-nprog" data-todos="{{ kpi_proy.n_programas }}" data-act="{{ kpi_proy.n_programas_act }}"
+         style="font-size:26px;font-weight:700;color:var(--green);">{{ kpi_proy.n_programas }}</div>
+    <div class="text-sm text-muted">Programa<span id="kpi-prog-s">{{ 's' if kpi_proy.n_programas != 1 }}</span></div>
   </div>
   <div class="card card-body" style="text-align:center;padding:14px;">
-    <div style="font-size:26px;font-weight:700;color:var(--blue);">{{ kpi_proy.n_anios }}</div>
-    <div class="text-sm text-muted">Convocatoria{{ 's' if kpi_proy.n_anios != 1 }}</div>
+    <div id="kpi-nanio" data-todos="{{ kpi_proy.n_anios }}" data-act="{{ kpi_proy.n_anios_act }}"
+         style="font-size:26px;font-weight:700;color:var(--blue);">{{ kpi_proy.n_anios }}</div>
+    <div class="text-sm text-muted">Convocatoria<span id="kpi-anio-s">{{ 's' if kpi_proy.n_anios != 1 }}</span></div>
   </div>
 </div>
 
@@ -434,7 +451,7 @@
 
 <!-- Table -->
 <div class="card">
-  <div class="card-header">Proyectos vinculados ({{ proyectos_vinculados|length }})</div>
+  <div class="card-header">Proyectos vinculados (<span id="tbl-count">{{ proyectos_vinculados|length }}</span>)</div>
   <div style="overflow-x:auto;">
     <table class="table">
       <thead>
@@ -448,7 +465,7 @@
       </thead>
       <tbody>
         {% for p in proyectos_vinculados %}
-        <tr>
+        <tr data-estado="{{ p.estado or '' }}">
           <td>
             <a href="{{ url_for('proyectos.detail', pid=p.id) }}" style="font-weight:500;color:var(--blue);text-decoration:none;">{{ p.nombre }}</a>
             {% if p.codigo %}<div style="font-size:11px;color:var(--text-muted);font-family:monospace;">{{ p.codigo }}</div>{% endif %}
@@ -481,12 +498,41 @@
 {% endblock %}
 
 {% block scripts %}
+<script>
+function abrirPdfPreview(url, titulo) {
+  document.getElementById('pdf-modal-title').textContent = titulo;
+  document.getElementById('pdf-modal-frame').src = url;
+  document.getElementById('pdf-modal').style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+function cerrarPdfPreview() {
+  document.getElementById('pdf-modal').style.display = 'none';
+  document.getElementById('pdf-modal-frame').src = '';
+  document.body.style.overflow = '';
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') cerrarPdfPreview(); });
+</script>
+
+<div id="pdf-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.55);align-items:center;justify-content:center;padding:24px;">
+  <div style="background:#fff;border-radius:14px;width:100%;max-width:960px;height:90vh;display:flex;flex-direction:column;box-shadow:0 24px 80px rgba(0,0,0,.35);overflow:hidden;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border);flex-shrink:0;">
+      <span id="pdf-modal-title" style="font-weight:700;font-size:15px;color:var(--text);"></span>
+      <button onclick="cerrarPdfPreview()" style="background:none;border:none;cursor:pointer;color:var(--text-muted);display:flex;align-items:center;">
+        <span class="material-icons-round">close</span>
+      </button>
+    </div>
+    <iframe id="pdf-modal-frame" src="" style="flex:1;border:none;width:100%;"></iframe>
+  </div>
+</div>
+
 {% if tab == 'proyectos' and proyectos_vinculados %}
 <script>
 (function () {
-  const byPrograma = {{ by_programa | tojson }};
-  const byAnio     = {{ by_anio     | tojson }};
-  const ipcFecha   = '{{ ipc_fecha_val }}';
+  const byPrograma    = {{ by_programa     | tojson }};
+  const byAnio        = {{ by_anio         | tojson }};
+  const byProgramaAct = {{ by_programa_act | tojson }};
+  const byAnioAct     = {{ by_anio_act     | tojson }};
+  const ipcFecha      = '{{ ipc_fecha_val }}';
 
   function fmtAnr(v) {
     v = parseFloat(v) || 0;
@@ -502,34 +548,35 @@
       tooltip: xFmt ? { callbacks: { label: c => xFmt(c.raw) } } : {}
     },
     scales: {
-      x: {
-        ticks: { font: { size: 11 }, callback: xFmt || undefined },
-        grid: { color: '#eee' }
-      },
+      x: { ticks: { font: { size: 11 }, callback: xFmt || undefined }, grid: { color: '#eee' } },
       y: { ticks: { font: { size: 12, weight: '600' } } }
     },
     responsive: true,
     maintainAspectRatio: false
   });
 
-  // Chart: n proyectos por programa
+  let anrMode    = 'nominal';
+  let filtroEst  = 'todos';   // 'todos' | 'activos'
+
+  function currentProg() { return filtroEst === 'activos' ? byProgramaAct : byPrograma; }
+  function currentAnio() { return filtroEst === 'activos' ? byAnioAct     : byAnio;    }
+
+  // \u2500\u2500 Chart: n proyectos por programa \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  let chartProgN = null;
   const ctxN = document.getElementById('chart-prog-n');
   if (ctxN) {
-    new Chart(ctxN, {
+    chartProgN = new Chart(ctxN, {
       type: 'bar',
       data: {
         labels: byPrograma.map(p => p.codigo),
-        datasets: [{
-          data: byPrograma.map(p => p.n),
-          backgroundColor: byPrograma.map(p => p.color + 'cc'),
-          borderRadius: 4
-        }]
+        datasets: [{ data: byPrograma.map(p => p.n),
+                     backgroundColor: byPrograma.map(p => p.color + 'cc'), borderRadius: 4 }]
       },
       options: barOpts(null)
     });
   }
 
-  // Chart: ANR por programa (actualizable con switch)
+  // \u2500\u2500 Chart: ANR por programa \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
   let chartAnrProg = null;
   const ctxAnr = document.getElementById('chart-prog-anr');
   if (ctxAnr) {
@@ -537,28 +584,22 @@
       type: 'bar',
       data: {
         labels: byPrograma.map(p => p.codigo),
-        datasets: [{
-          data: byPrograma.map(p => p.anr_nom),
-          backgroundColor: byPrograma.map(p => p.color + 'cc'),
-          borderRadius: 4
-        }]
+        datasets: [{ data: byPrograma.map(p => p.anr_nom),
+                     backgroundColor: byPrograma.map(p => p.color + 'cc'), borderRadius: 4 }]
       },
       options: barOpts(fmtAnr)
     });
   }
 
-  // Chart: proyectos por convocatoria
+  // \u2500\u2500 Chart: proyectos por convocatoria \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  let chartAnio = null;
   const ctxAnio = document.getElementById('chart-anio');
   if (ctxAnio) {
-    new Chart(ctxAnio, {
+    chartAnio = new Chart(ctxAnio, {
       type: 'bar',
       data: {
         labels: byAnio.map(a => a.anio),
-        datasets: [{
-          data: byAnio.map(a => a.n),
-          backgroundColor: '#1565C0bb',
-          borderRadius: 4
-        }]
+        datasets: [{ data: byAnio.map(a => a.n), backgroundColor: '#1565C0bb', borderRadius: 4 }]
       },
       options: {
         plugins: { legend: { display: false } },
@@ -566,37 +607,96 @@
           x: { ticks: { font: { size: 11 } } },
           y: { ticks: { font: { size: 11 }, stepSize: 1 }, grid: { color: '#eee' } }
         },
-        responsive: true,
-        maintainAspectRatio: false
+        responsive: true, maintainAspectRatio: false
       }
     });
   }
 
-  // ANR switch
-  let anrMode = 'nominal';
-  window.setAnrMode = function (mode) {
-    anrMode = mode;
-    document.getElementById('anr-nom-btn').classList.toggle('active', mode === 'nominal');
-    document.getElementById('anr-real-btn').classList.toggle('active', mode === 'real');
+  // \u2500\u2500 Redibuja todos los charts y KPIs con el estado actual \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  function refreshAll() {
+    const prog = currentProg();
+    const anio = currentAnio();
+    const isReal = anrMode === 'real';
 
-    const kpiEl = document.getElementById('kpi-anr-total');
-    if (kpiEl) kpiEl.textContent = fmtAnr(parseInt(mode === 'real' ? kpiEl.dataset.real : kpiEl.dataset.nom) || 0);
+    // Charts
+    if (chartProgN) {
+      chartProgN.data.labels              = prog.map(p => p.codigo);
+      chartProgN.data.datasets[0].data    = prog.map(p => p.n);
+      chartProgN.data.datasets[0].backgroundColor = prog.map(p => p.color + 'cc');
+      chartProgN.update();
+    }
+    if (chartAnrProg) {
+      chartAnrProg.data.labels             = prog.map(p => p.codigo);
+      chartAnrProg.data.datasets[0].data   = prog.map(p => isReal ? p.anr_real : p.anr_nom);
+      chartAnrProg.data.datasets[0].backgroundColor = prog.map(p => p.color + 'cc');
+      chartAnrProg.update();
+    }
+    if (chartAnio) {
+      chartAnio.data.labels            = anio.map(a => a.anio);
+      chartAnio.data.datasets[0].data  = anio.map(a => a.n);
+      chartAnio.update();
+    }
 
-    const suffix = mode === 'nominal' ? '(nominal)' : '(real ' + ipcFecha + ')';
+    // KPI num\u00e9ricos
+    const isAct = filtroEst === 'activos';
+    const kpiTotal = document.getElementById('kpi-total');
+    if (kpiTotal) kpiTotal.textContent = isAct ? kpiTotal.dataset.act : kpiTotal.dataset.todos;
+    const kpiNProg = document.getElementById('kpi-nprog');
+    if (kpiNProg) {
+      kpiNProg.textContent = isAct ? kpiNProg.dataset.act : kpiNProg.dataset.todos;
+      const s = document.getElementById('kpi-prog-s');
+      if (s) s.textContent = parseInt(kpiNProg.textContent) !== 1 ? 's' : '';
+    }
+    const kpiNAnio = document.getElementById('kpi-nanio');
+    if (kpiNAnio) {
+      kpiNAnio.textContent = isAct ? kpiNAnio.dataset.act : kpiNAnio.dataset.todos;
+      const s = document.getElementById('kpi-anio-s');
+      if (s) s.textContent = parseInt(kpiNAnio.textContent) !== 1 ? 's' : '';
+    }
+    const kpiAnr = document.getElementById('kpi-anr-total');
+    if (kpiAnr) {
+      const key = (isReal ? 'real' : 'nom') + (isAct ? 'Act' : '');
+      const dataKey = isReal ? (isAct ? 'realAct' : 'real') : (isAct ? 'nomAct' : 'nom');
+      kpiAnr.textContent = fmtAnr(parseInt(kpiAnr.dataset[dataKey]) || 0);
+    }
+
+    // Tabla: mostrar/ocultar filas
+    let visible = 0;
+    document.querySelectorAll('table.table tbody tr[data-estado]').forEach(row => {
+      const show = !isAct || row.dataset.estado === 'activo';
+      row.style.display = show ? '' : 'none';
+      if (show) visible++;
+    });
+    const cnt = document.getElementById('tbl-count');
+    if (cnt) cnt.textContent = visible;
+
+    // ANR cells
+    const suffix = isReal ? '(real ' + ipcFecha + ')' : '(nominal)';
     ['kpi-anr-lbl', 'chart-anr-mode', 'table-anr-lbl'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.textContent = suffix;
     });
-
-    document.querySelectorAll('.anr-cell').forEach(function (cell) {
-      const v = parseInt(mode === 'real' ? cell.dataset.real : cell.dataset.nom) || 0;
+    document.querySelectorAll('.anr-cell').forEach(cell => {
+      const nomV  = parseInt(cell.dataset.nom)  || 0;
+      const realV = parseInt(cell.dataset.real) || 0;
+      const v = isReal ? realV : nomV;
       cell.textContent = v > 0 ? fmtAnr(v) : '\u2014';
     });
+  }
 
-    if (chartAnrProg) {
-      chartAnrProg.data.datasets[0].data = byPrograma.map(p => mode === 'real' ? p.anr_real : p.anr_nom);
-      chartAnrProg.update();
-    }
+  // \u2500\u2500 Switches p\u00fablicos \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  window.setFiltroEstado = function (modo) {
+    filtroEst = modo;
+    document.getElementById('fil-todos-btn').className   = 'metric-btn' + (modo === 'todos'   ? ' metric-btn-active' : '');
+    document.getElementById('fil-activos-btn').className = 'metric-btn' + (modo === 'activos' ? ' metric-btn-active' : '');
+    refreshAll();
+  };
+
+  window.setAnrMode = function (mode) {
+    anrMode = mode;
+    document.getElementById('anr-nom-btn').classList.toggle('active', mode === 'nominal');
+    document.getElementById('anr-real-btn').classList.toggle('active', mode === 'real');
+    refreshAll();
   };
 })();
 </script>

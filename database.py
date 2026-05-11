@@ -361,6 +361,32 @@ def init_db():
         FOREIGN KEY (ejecutado_por) REFERENCES users(id)
     );
 
+    -- ── Documentos por programa (ej. pestaña Documentación de ORBITA) ────────
+    CREATE TABLE IF NOT EXISTS programa_documentos (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        programa_id INTEGER NOT NULL,
+        nombre_doc  TEXT NOT NULL,
+        filename    TEXT NOT NULL,
+        descripcion TEXT,
+        subido_por  INTEGER,
+        created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (programa_id) REFERENCES programas(id),
+        FOREIGN KEY (subido_por) REFERENCES users(id)
+    );
+
+    -- ── Adjuntos por proyecto ────────────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS proyecto_adjuntos (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        proyecto_id INTEGER NOT NULL,
+        nombre_doc  TEXT NOT NULL,
+        filename    TEXT NOT NULL,
+        descripcion TEXT,
+        subido_por  INTEGER,
+        created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (proyecto_id) REFERENCES proyectos(id),
+        FOREIGN KEY (subido_por) REFERENCES users(id)
+    );
+
     -- ── Municipios: datos institucionales ───────────────────────────────────
     CREATE TABLE IF NOT EXISTS municipios (
         id                INTEGER PRIMARY KEY AUTOINCREMENT,

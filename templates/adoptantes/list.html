@@ -159,9 +159,21 @@
   {% endif %}
   {% endif %}
 
-  <!-- Row count -->
-  <div style="padding:8px 20px;border-top:1px solid var(--border);font-size:12px;color:var(--text-muted);">
+  <!-- Row count + export -->
+  <div style="padding:8px 20px;border-top:1px solid var(--border);font-size:12px;color:var(--text-muted);display:flex;justify-content:space-between;align-items:center;">
     <span id="adop-count"></span>
+    <div style="display:flex;gap:4px;">
+      <a href="#" onclick="exportXLSX();return false;"
+         title="Descargar Excel"
+         style="display:inline-flex;align-items:center;gap:2px;font-size:11px;color:var(--text-muted);padding:3px 7px;border:1px solid var(--border);border-radius:4px;text-decoration:none;line-height:1.4;">
+        <span class="material-icons-round" style="font-size:13px;">download</span>.xlsx
+      </a>
+      <a href="#" onclick="exportCSV();return false;"
+         title="Descargar CSV"
+         style="display:inline-flex;align-items:center;gap:2px;font-size:11px;color:var(--text-muted);padding:3px 7px;border:1px solid var(--border);border-radius:4px;text-decoration:none;line-height:1.4;">
+        <span class="material-icons-round" style="font-size:13px;">download</span>.csv
+      </a>
+    </div>
   </div>
 </div>
 {% endblock %}
@@ -286,6 +298,73 @@
   })();
 
   updateCount();
+
+  function _collectVisibleRows() {
+    const isEmpresas = {{ 'true' if tab == 'empresas' else 'false' }};
+    const headers = isEmpresas
+      ? ['Empresa adoptante', 'Municipio', 'Sector', 'Programas', 'Proyectos', 'ANR nominal ($)']
+      : ['Municipio adoptante', 'Municipio (ubicación)', 'Programas', 'Proyectos', 'ANR nominal ($)'];
+    const visibleRows = rows.filter(function(r) { return r.style.display !== 'none'; });
+    const data = visibleRows.map(function(r) {
+      const anrRaw = parseInt(r.querySelector('.anr-cell')?.dataset.anr || 0) || 0;
+      if (isEmpresas) {
+        return [
+          (r.cells[0]?.textContent || '').trim(),
+          (r.cells[1]?.textContent || '').trim(),
+          (r.cells[2]?.textContent || '').trim(),
+          r.dataset.programa || '',
+          parseInt(r.dataset.proyectos || 0),
+          anrRaw,
+        ];
+      }
+      return [
+        (r.cells[0]?.textContent || '').trim(),
+        (r.cells[1]?.textContent || '').trim(),
+        r.dataset.programa || '',
+        parseInt(r.dataset.proyectos || 0),
+        anrRaw,
+      ];
+    });
+    return { headers: headers, data: data };
+  }
+
+  window.exportXLSX = function() {
+    const collected = _collectVisibleRows();
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '{{ url_for("adoptantes.exportar") }}';
+    function addField(name, value) {
+      const inp = document.createElement('input');
+      inp.type = 'hidden'; inp.name = name; inp.value = value;
+      form.appendChild(inp);
+    }
+    addField('data', JSON.stringify(collected.data));
+    addField('cols', JSON.stringify(collected.headers));
+    addField('tab', '{{ tab }}');
+    document.body.appendChild(form);
+    form.submit();
+    document.body.removeChild(form);
+  };
+
+  window.exportCSV = function() {
+    const collected = _collectVisibleRows();
+    const esc = function(v) {
+      return '"' + String(v === null || v === undefined ? '' : v).replace(/\r?\n/g, ' ').replace(/"/g, '""') + '"';
+    };
+    const csvRows = [collected.headers.map(esc).join(',')];
+    collected.data.forEach(function(row) { csvRows.push(row.map(esc).join(',')); });
+
+    const bom = '﻿';
+    const blob = new Blob([bom + csvRows.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'adoptantes_{{ tab }}.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
+  };
 })();
 </script>
 {% endblock %}

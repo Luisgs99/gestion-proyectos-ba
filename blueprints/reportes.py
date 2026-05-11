@@ -166,9 +166,8 @@ def index():
     ipc_meta = query("SELECT clave, valor FROM configuracion WHERE clave LIKE 'ipc_%'")
     ipc_fecha_val = {r['clave']: r['valor'] for r in ipc_meta}.get('ipc_ultima_fecha', '')
 
-    municipios = [r['municipio'] for r in query(
-        "SELECT DISTINCT municipio FROM proyectos "
-        "WHERE municipio IS NOT NULL AND municipio != '' ORDER BY municipio"
+    municipios = [r['nombre'] for r in query(
+        "SELECT nombre FROM municipios ORDER BY nombre"
     )]
     instituciones = [r['inst'] for r in query(
         "SELECT inst FROM ("
@@ -319,25 +318,41 @@ def api_datos():
         if programa_ids and str(p['id']) not in programa_ids:
             continue
         ipc_join, has_ipc = build_ipc_join(None, ipc_fecha_val, programa_id=p['id'], alias='proy')
+        extra_where = [f'proy.programa_id={p["id"]}']
+        extra_args = []
+        if estados_sel:
+            ph = ','.join('?' * len(estados_sel))
+            extra_where.append(f"proy.estado IN ({ph})")
+            extra_args.extend(estados_sel)
+        if anio_desde:
+            extra_where.append(f'CAST(COALESCE(proy.anio,proy.anio_aprobacion,0) AS INTEGER)>={int(anio_desde)}')
+        if anio_hasta:
+            extra_where.append(f'CAST(COALESCE(proy.anio,proy.anio_aprobacion,0) AS INTEGER)<={int(anio_hasta)}')
+        if municipio_sel:
+            extra_where.append('proy.municipio=?')
+            extra_args.append(municipio_sel)
+        if ib2_sel:
+            if p['codigo'] in ('FITBA', 'FONICS'):
+                extra_where.append('proy.ib2=?')
+            else:
+                extra_where.append('proy.beneficiario=?')
+            extra_args.append(ib2_sel)
         if has_ipc:
             real_expr = ipc_anr_expr(has_ipc, alias='proy')
-            extra_where = [f'proy.programa_id={p["id"]}']
-            if estados_sel:
-                ph = ','.join('?' * len(estados_sel))
-                extra_where.append(f"proy.estado IN ({ph})")
             r = query(
                 f"SELECT COALESCE(SUM({real_expr}),0) as s"
                 f" FROM proyectos proy {ipc_join}"
                 f" WHERE {' AND '.join(extra_where)}",
-                estados_sel if estados_sel else []
-            , one=True)
-            val = r['s'] if r else 0
+                extra_args, one=True
+            )
         else:
             r = query(
-                f"SELECT COALESCE(SUM(anr_monto),0) as s FROM proyectos"
-                f" WHERE programa_id=?", (p['id'],), one=True
+                f"SELECT COALESCE(SUM(proy.anr_monto),0) as s"
+                f" FROM proyectos proy"
+                f" WHERE {' AND '.join(extra_where)}",
+                extra_args, one=True
             )
-            val = r['s'] if r else 0
+        val = r['s'] if r else 0
         anr_real_total += val
         anr_real_by_prog[p['id']] = round(val)
     kpis['anr_real'] = round(anr_real_total)
@@ -479,6 +494,7 @@ def api_datos():
 def exportar():
     programa_id = request.args.get('programa_id', '').strip()
     prog_codigo = _prog_codigo(programa_id) if programa_id else None
+    formato = request.args.get('formato', 'xlsx')
 
     # Columnas a incluir (si no vienen, usar las default)
     cols_param = request.args.getlist('cols')
@@ -529,6 +545,15 @@ def exportar():
         rename = {c: col_labels.get(c, COLUMNAS_META.get(c, {}).get('label', c)) for c in df.columns}
         df = df.rename(columns=rename)
         df = df.dropna(axis=1, how='all')
+
+    ts = datetime.now().strftime('%Y%m%d_%H%M')
+    prog_tag = f'_{prog_codigo}' if prog_codigo else ''
+
+    if formato == 'csv':
+        output = io.BytesIO(df.to_csv(index=False).encode('utf-8-sig'))
+        output.seek(0)
+        return send_file(output, download_name=f'reporte{prog_tag}_{ts}.csv',
+                         as_attachment=True, mimetype='text/csv; charset=utf-8')
 
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -594,8 +619,6 @@ def exportar():
         ws_meta.set_column(1, 1, 35)
 
     output.seek(0)
-    ts = datetime.now().strftime('%Y%m%d_%H%M')
-    prog_tag = f'_{prog_codigo}' if prog_codigo else ''
     fname = f'reporte{prog_tag}_{ts}.xlsx'
     return send_file(output, download_name=fname, as_attachment=True,
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')

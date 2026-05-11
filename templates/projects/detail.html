@@ -117,6 +117,9 @@
       <button class="tab-btn active" data-tab="hitos">Hitos de avance</button>
       {% endif %}
       <button class="tab-btn {% if proyecto.programa_codigo == 'ORBITA' %}active{% endif %}" data-tab="info">Datos del proyecto</button>
+      <button class="tab-btn" data-tab="adjuntos">
+        Archivos{% if adjuntos %} <span style="background:var(--teal);color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700;margin-left:3px;">{{ adjuntos|length }}</span>{% endif %}
+      </button>
     </div>
 
     {% if proyecto.programa_codigo != 'ORBITA' %}
@@ -363,6 +366,89 @@
 
       </div>
     </div>
+
+    <!-- TAB: Archivos -->
+    <div class="tab-content" data-tab-content="adjuntos">
+      {% if can_edit() %}
+      <div class="card mb-2">
+        <div class="card-header"><span class="card-title">Subir archivo</span></div>
+        <form method="post" action="{{ url_for('proyectos.subir_adjunto', pid=proyecto.id) }}" enctype="multipart/form-data" class="card-body">
+          <div class="form-group mb-2">
+            <label class="form-label">Nombre / descripción breve</label>
+            <input name="nombre_doc" class="form-control" placeholder="Ej: Versión borrador enviada a revisor…" required>
+          </div>
+          <div class="form-group mb-2">
+            <label class="form-label">Archivo</label>
+            <input type="file" name="archivo" class="form-control" required>
+          </div>
+          <div class="form-group mb-2">
+            <label class="form-label">Notas (opcional)</label>
+            <input name="descripcion" class="form-control" placeholder="Contexto adicional…">
+          </div>
+          <button type="submit" class="btn btn-primary btn-sm">
+            <span class="material-icons-round">upload_file</span> Subir
+          </button>
+        </form>
+      </div>
+      {% endif %}
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Archivos adjuntos</span>
+          <span class="badge badge-activo">{{ adjuntos|length }}</span>
+        </div>
+        {% if adjuntos %}
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Nombre</th>
+                <th>Notas</th>
+                <th>Subido por</th>
+                <th>Fecha</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for a in adjuntos %}
+              <tr>
+                <td style="font-weight:600;">
+                  <span class="material-icons-round" style="font-size:15px;vertical-align:middle;margin-right:4px;color:var(--teal);">description</span>
+                  {{ a.nombre_doc }}
+                </td>
+                <td class="text-sm text-muted">{{ a.descripcion or '—' }}</td>
+                <td class="text-sm">{{ (a.subido_por_nombre or '') + ' ' + (a.subido_por_apellido or '') or '—' }}</td>
+                <td class="text-sm text-muted">{{ a.created_at[:10] if a.created_at else '—' }}</td>
+                <td style="white-space:nowrap;">
+                  <button class="btn btn-secondary btn-sm btn-icon" title="Vista previa"
+                          onclick="abrirPdfPreview('{{ url_for('proyectos.ver_adjunto', pid=proyecto.id, fid=a.id) }}', '{{ a.nombre_doc|e }}')">
+                    <span class="material-icons-round">visibility</span>
+                  </button>
+                  <a href="{{ url_for('proyectos.descargar_adjunto', pid=proyecto.id, fid=a.id) }}"
+                     class="btn btn-secondary btn-sm btn-icon" title="Descargar">
+                    <span class="material-icons-round">download</span>
+                  </a>
+                  {% if can_edit() %}
+                  <button type="button" class="btn btn-danger btn-sm btn-icon"
+                          onclick="confirmDelete('¿Eliminar este archivo?','del-adj-{{ a.id }}')"
+                          title="Eliminar archivo">
+                    <span class="material-icons-round">delete</span>
+                  </button>
+                  <form id="del-adj-{{ a.id }}" method="post" action="{{ url_for('proyectos.eliminar_adjunto', pid=proyecto.id, fid=a.id) }}" style="display:none;"></form>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="card-body">
+          <p class="text-muted text-sm" style="padding:8px 0;">Sin archivos adjuntos aún.{% if can_edit() %} Usá el formulario de arriba para subir uno.{% endif %}</p>
+        </div>
+        {% endif %}
+      </div>
+    </div>
   </div>
 
   <!-- Right: Novedades -->
@@ -438,5 +524,30 @@
 document.querySelectorAll('input[name="fecha"]').forEach(i => {
   if (!i.value) i.value = new Date().toISOString().split('T')[0];
 });
+
+function abrirPdfPreview(url, titulo) {
+  document.getElementById('pdf-modal-title').textContent = titulo;
+  document.getElementById('pdf-modal-frame').src = url;
+  document.getElementById('pdf-modal').style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+function cerrarPdfPreview() {
+  document.getElementById('pdf-modal').style.display = 'none';
+  document.getElementById('pdf-modal-frame').src = '';
+  document.body.style.overflow = '';
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') cerrarPdfPreview(); });
 </script>
+
+<div id="pdf-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.55);align-items:center;justify-content:center;padding:24px;">
+  <div style="background:#fff;border-radius:14px;width:100%;max-width:960px;height:90vh;display:flex;flex-direction:column;box-shadow:0 24px 80px rgba(0,0,0,.35);overflow:hidden;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border);flex-shrink:0;">
+      <span id="pdf-modal-title" style="font-weight:700;font-size:15px;color:var(--text);"></span>
+      <button onclick="cerrarPdfPreview()" style="background:none;border:none;cursor:pointer;color:var(--text-muted);display:flex;align-items:center;">
+        <span class="material-icons-round">close</span>
+      </button>
+    </div>
+    <iframe id="pdf-modal-frame" src="" style="flex:1;border:none;width:100%;"></iframe>
+  </div>
+</div>
 {% endblock %}

@@ -1,4 +1,8 @@
-from flask import Blueprint, render_template, request
+import io
+import json
+from datetime import datetime
+import pandas as pd
+from flask import Blueprint, render_template, request, send_file
 from database import query
 from helpers.auth import login_required
 from helpers.ipc import get_ipc_config
@@ -146,3 +150,40 @@ def list():
                            kpi=dict(kpi),
                            empresas=[dict(r) for r in empresas],
                            municipios=[dict(r) for r in municipios])
+
+
+@bp.route('/adoptantes/exportar', methods=['POST'])
+@login_required
+def exportar():
+    try:
+        data = json.loads(request.form.get('data', '[]'))
+        cols = json.loads(request.form.get('cols', '[]'))
+        tab  = request.form.get('tab', 'adoptantes')
+    except Exception:
+        return '', 400
+
+    df = pd.DataFrame(data, columns=cols) if data else pd.DataFrame(columns=cols)
+
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df_out = df if not df.empty else pd.DataFrame({'Sin resultados': []})
+        df_out.to_excel(writer, sheet_name='Adoptantes', index=False)
+        wb = writer.book
+        ws = writer.sheets['Adoptantes']
+        hdr_fmt  = wb.add_format({'bold': True, 'bg_color': '#1E325C', 'font_color': 'white', 'border': 1})
+        cell_fmt = wb.add_format({'border': 1})
+        num_fmt  = wb.add_format({'num_format': '#,##0', 'border': 1})
+        NUM_COLS = {'Proyectos', 'ANR nominal ($)'}
+        for ci, col in enumerate(df_out.columns):
+            ws.write(0, ci, col, hdr_fmt)
+            ws.set_column(ci, ci, max(len(str(col)) + 4, 14))
+        for ri, row in df_out.iterrows():
+            for ci, val in enumerate(row):
+                col = df_out.columns[ci]
+                ws.write(ri + 1, ci, val, num_fmt if col in NUM_COLS else cell_fmt)
+
+    output.seek(0)
+    ts = datetime.now().strftime('%Y%m%d_%H%M')
+    return send_file(output, download_name=f'adoptantes_{tab}_{ts}.xlsx',
+                     as_attachment=True,
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')

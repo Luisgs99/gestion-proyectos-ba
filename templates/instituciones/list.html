@@ -15,6 +15,12 @@
   <button onclick="document.getElementById('modal-import').style.display='flex'" class="btn btn-secondary btn-sm">
     <span class="material-icons-round">upload_file</span> Importar Excel
   </button>
+  <form method="post" action="{{ url_for('instituciones.sync_uvt_fitba') }}" style="display:inline;"
+        onsubmit="return confirm('Crear una entrada de tipo UVT para cada Unidad de Vinculación Tecnológica encontrada en FITBA que aún no esté registrada. ¿Continuar?')">
+    <button type="submit" class="btn btn-secondary btn-sm">
+      <span class="material-icons-round">sync</span> Sync UVTs
+    </button>
+  </form>
   <form method="post" action="{{ url_for('instituciones.sync_proyectos') }}" style="display:inline;"
         onsubmit="return confirm('Crear una entrada para cada IB encontrada en proyectos que aún no esté registrada. ¿Continuar?')">
     <button type="submit" class="btn btn-secondary btn-sm">
@@ -25,6 +31,19 @@
 {% endblock %}
 
 {% block content %}
+<!-- Tabs: Todas / IB / UVT -->
+<div style="display:flex;gap:6px;margin-bottom:16px;">
+  <button id="tab-todas" class="tab-btn active" onclick="switchTab('todas')" style="font-size:13px;padding:6px 18px;font-weight:600;">
+    Todas <span style="font-size:11px;font-weight:400;opacity:0.8;">({{ kpi.total }})</span>
+  </button>
+  <button id="tab-ib" class="tab-btn" onclick="switchTab('ib')" style="font-size:13px;padding:6px 18px;font-weight:600;">
+    IB <span style="font-size:11px;font-weight:400;opacity:0.8;">({{ kpi_ib.total }})</span>
+  </button>
+  <button id="tab-uvt" class="tab-btn" onclick="switchTab('uvt')" style="font-size:13px;padding:6px 18px;font-weight:600;">
+    UVT <span style="font-size:11px;font-weight:400;opacity:0.8;">({{ kpi_uvt.total }})</span>
+  </button>
+</div>
+
 <!-- ANR switch -->
 <div style="display:flex;justify-content:flex-end;align-items:center;gap:6px;margin-bottom:12px;">
   <span style="font-size:12px;color:var(--text-muted);">ANR:</span>
@@ -35,21 +54,19 @@
 <!-- KPI cards -->
 <div class="grid-4 mb-3">
   <div class="card card-body" style="text-align:center;">
-    <div style="font-size:28px;font-weight:700;color:var(--blue);">{{ kpi.total }}</div>
-    <div class="text-sm text-muted">IBs registradas</div>
+    <div id="kpi-total" style="font-size:28px;font-weight:700;color:var(--blue);">{{ kpi.total }}</div>
+    <div id="kpi-total-lbl" class="text-sm text-muted">Instituciones registradas</div>
   </div>
   <div class="card card-body" style="text-align:center;">
-    <div style="font-size:28px;font-weight:700;color:var(--green);">{{ kpi.con_proyectos }}</div>
-    <div class="text-sm text-muted">IBs con proyectos</div>
+    <div id="kpi-con-proyectos" style="font-size:28px;font-weight:700;color:var(--green);">{{ kpi.con_proyectos }}</div>
+    <div id="kpi-con-proyectos-lbl" class="text-sm text-muted">Con proyectos</div>
   </div>
   <div class="card card-body" style="text-align:center;">
-    <div style="font-size:28px;font-weight:700;color:var(--blue);">{{ kpi.total_proyectos }}</div>
+    <div id="kpi-total-proyectos" style="font-size:28px;font-weight:700;color:var(--blue);">{{ kpi.total_proyectos }}</div>
     <div class="text-sm text-muted">Proyectos vinculados</div>
   </div>
   <div class="card card-body" style="text-align:center;">
     <div id="kpi-anr"
-         data-nominal="{{ kpi.total_anr|int }}"
-         data-real="{{ kpi.total_anr_real|int }}"
          style="font-size:22px;font-weight:700;color:var(--orange);">{{ fmt_anr(kpi.total_anr) }}</div>
     <div class="text-sm text-muted">ANR total <span id="kpi-anr-label" style="font-size:10px;">(nominal)</span></div>
   </div>
@@ -57,7 +74,7 @@
 
 {% if kpi.con_proyectos > 0 %}
 <!-- Charts -->
-<div class="grid-2 mb-3">
+<div id="charts-section" class="grid-2 mb-3">
   <div class="card card-body">
     <div style="font-size:13px;font-weight:600;color:var(--text-muted);margin-bottom:8px;">
       <span class="material-icons-round" style="font-size:14px;vertical-align:middle;">bar_chart</span>
@@ -79,6 +96,123 @@
 </div>
 {% endif %}
 
+<!-- IB: participación por programa (visible solo en tab IB) -->
+{% if ib_por_programa %}
+<div id="ib-programa-section" class="mb-3" style="display:none;">
+  <div class="card card-body">
+    <div style="font-size:13px;font-weight:600;color:var(--text-muted);margin-bottom:8px;">
+      <span class="material-icons-round" style="font-size:14px;vertical-align:middle;">account_tree</span>
+      Participación de IBs por programa
+    </div>
+    <div style="position:relative;height:220px;">
+      <canvas id="chart-ib-programa"></canvas>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- UVT: calificación y ranking (visible solo en tab UVT) -->
+<div id="uvt-section" style="display:none;">
+  <div class="grid-3 mb-3">
+    <div class="card card-body" style="text-align:center;">
+      <div style="font-size:28px;font-weight:700;color:var(--blue);">{{ kpi_uvt_extra.con_fitba }}</div>
+      <div class="text-sm text-muted">Con proyectos FITBA</div>
+    </div>
+    <div class="card card-body" style="text-align:center;">
+      {% if kpi_uvt_extra.tasa_promedio > 0 %}
+      <div style="font-size:28px;font-weight:700;color:var(--green);">{{ (kpi_uvt_extra.tasa_promedio * 100)|round|int }}%</div>
+      {% else %}
+      <div style="font-size:28px;font-weight:700;color:var(--text-muted);">—</div>
+      {% endif %}
+      <div class="text-sm text-muted">Tasa promedio de éxito</div>
+    </div>
+    <div class="card card-body" style="text-align:center;">
+      <div style="font-size:28px;font-weight:700;color:var(--orange);">{{ kpi_uvt_extra.calificadas }}</div>
+      <div class="text-sm text-muted">UVTs calificadas</div>
+    </div>
+  </div>
+
+  {% if uvt_stats %}
+  <div class="card mb-3">
+    <div class="card-header">
+      <span>Ranking UVTs <span class="text-sm text-muted" style="font-weight:400;">— basado en programa FITBA</span></span>
+      <span style="margin-left:auto;font-size:11px;color:var(--text-muted);">
+        Calificación = tasa de éxito (50%) + volumen (30%) + ANR gestionado (20%)
+      </span>
+    </div>
+    <div style="overflow-x:auto;">
+      <table class="table">
+        <thead>
+          <tr>
+            <th style="width:36px;">#</th>
+            <th>UVT</th>
+            <th>Municipio</th>
+            <th style="text-align:center;">Proyectos FITBA</th>
+            <th style="text-align:center;">Activos</th>
+            <th style="text-align:center;min-width:150px;">Tasa de éxito</th>
+            <th style="text-align:center;">Calificación</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in uvt_stats %}
+          {% set score_color = '#2e7d32' if s.score_label == 'Alta' else ('#e65100' if s.score_label == 'Media' else '#757575') %}
+          <tr>
+            <td style="color:var(--text-muted);font-size:13px;">{{ loop.index }}</td>
+            <td style="max-width:260px;">
+              <a href="{{ url_for('instituciones.detail', iid=s.id) }}" style="font-weight:600;color:var(--blue);text-decoration:none;">{{ s.nombre }}</a>
+              {% if s.nombre_corto %}<span class="badge" style="font-size:10px;margin-left:4px;background:var(--bg-hover);">{{ s.nombre_corto }}</span>{% endif %}
+            </td>
+            <td class="text-sm">{{ s.municipio or '—' }}</td>
+            <td style="text-align:center;font-weight:{% if s.total_fitba > 0 %}600{% else %}400{% endif %};">
+              {% if s.total_fitba > 0 %}{{ s.total_fitba }}{% else %}<span style="color:var(--text-muted);">—</span>{% endif %}
+            </td>
+            <td style="text-align:center;">
+              {% if s.total_fitba > 0 %}
+              <span style="font-weight:600;color:{% if s.activos_fitba > 0 %}var(--green){% else %}var(--text-muted){% endif %};">{{ s.activos_fitba }}</span>
+              {% else %}<span style="color:var(--text-muted);">—</span>{% endif %}
+            </td>
+            <td style="text-align:center;">
+              {% if s.tasa_exito is not none %}
+              {% set tasa_pct = (s.tasa_exito * 100)|round|int %}
+              {% set bar_color = '#2e7d32' if s.tasa_exito >= 0.7 else ('#e65100' if s.tasa_exito >= 0.4 else '#c62828') %}
+              <div style="display:flex;align-items:center;gap:6px;justify-content:center;">
+                <div style="width:70px;height:6px;background:var(--border);border-radius:3px;overflow:hidden;flex-shrink:0;">
+                  <div style="width:{{ tasa_pct }}%;height:100%;border-radius:3px;background:{{ bar_color }};"></div>
+                </div>
+                <span style="font-size:12px;font-weight:600;min-width:34px;text-align:left;">{{ tasa_pct }}%</span>
+              </div>
+              {% else %}<span style="color:var(--text-muted);font-size:12px;">Sin datos</span>{% endif %}
+            </td>
+            <td style="text-align:center;">
+              {% if s.score is not none %}
+              <div style="display:flex;align-items:center;gap:6px;justify-content:center;">
+                <span style="font-size:20px;font-weight:700;color:{{ score_color }};line-height:1;">{{ s.score }}</span>
+                <span class="badge" style="font-size:10px;background:{{ score_color }};color:#fff;padding:2px 7px;">{{ s.score_label }}</span>
+              </div>
+              {% else %}<span style="color:var(--text-muted);font-size:12px;">Sin calificar</span>{% endif %}
+            </td>
+            <td><a href="{{ url_for('instituciones.detail', iid=s.id) }}" class="btn btn-secondary btn-sm">Ver</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div style="padding:8px 20px;border-top:1px solid var(--border);font-size:12px;color:var(--text-muted);">
+      {{ uvt_stats|length }} UVTs registradas · {{ kpi_uvt_extra.total_fitba }} proyectos FITBA en total
+    </div>
+  </div>
+  {% else %}
+  <div class="card card-body mb-3" style="text-align:center;padding:40px;color:var(--text-muted);">
+    <span class="material-icons-round" style="font-size:48px;display:block;margin-bottom:8px;">business</span>
+    No hay UVTs registradas aún. Usá <strong>Sync UVTs</strong> para importarlas desde FITBA.
+  </div>
+  {% endif %}
+</div>
+
+<!-- Tabla general (solo pestaña Todas) -->
+<div id="table-section">
+
 <!-- Filters -->
 <form method="get" class="card card-body mb-3" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
   <div style="flex:1;min-width:180px;">
@@ -89,7 +223,7 @@
     <label class="form-label">Tipo</label>
     <select name="tipo" class="form-control">
       <option value="">Todos</option>
-      {% for t in tipos %}<option value="{{ t }}" {% if tipo==t %}selected{% endif %}>{{ t|capitalize }}</option>{% endfor %}
+      {% for t in tipos %}<option value="{{ t }}" {% if tipo==t %}selected{% endif %}>{{ 'UVT' if t == 'uvt' else t|capitalize }}</option>{% endfor %}
     </select>
   </div>
   <div>
@@ -109,7 +243,20 @@
 <div class="card">
   <div class="card-header" style="flex-wrap:wrap;gap:8px;">
     <span>Instituciones ({{ instituciones|length }})</span>
-    <div style="margin-left:auto;display:flex;align-items:center;gap:6px;">
+    <div style="margin-left:auto;display:flex;align-items:center;gap:4px;">
+      {% set qs = (request.query_string.decode() + '&') if request.query_string else '' %}
+      <a href="{{ url_for('instituciones.exportar') }}?{{ qs }}formato=xlsx"
+         title="Descargar Excel"
+         style="display:inline-flex;align-items:center;gap:2px;font-size:11px;color:var(--text-muted);padding:3px 7px;border:1px solid var(--border);border-radius:4px;text-decoration:none;line-height:1.4;">
+        <span class="material-icons-round" style="font-size:13px;">download</span>.xlsx
+      </a>
+      <a href="{{ url_for('instituciones.exportar') }}?{{ qs }}formato=csv"
+         title="Descargar CSV"
+         style="display:inline-flex;align-items:center;gap:2px;font-size:11px;color:var(--text-muted);padding:3px 7px;border:1px solid var(--border);border-radius:4px;text-decoration:none;line-height:1.4;">
+        <span class="material-icons-round" style="font-size:13px;">download</span>.csv
+      </a>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;">
       <span class="material-icons-round" style="font-size:15px;color:var(--text-muted);">search</span>
       <input id="ib-search" type="text" class="form-control" placeholder="Filtrar en tabla…"
              style="width:220px;padding:4px 10px;font-size:13px;"
@@ -139,12 +286,13 @@
         {% set prog_list  = (i.programas or '').split(',') %}
         {% set color_list = (i.colores   or '').split(',') %}
         <tr data-search="{{ (i.nombre or '') ~ ' ' ~ (i.nombre_corto or '') ~ ' ' ~ (i.municipio or '') ~ ' ' ~ (i.tipo or '') ~ ' ' ~ (i.programas or '') }}"
-            data-proyectos="{{ i.n_proyectos }}">
+            data-proyectos="{{ i.n_proyectos }}"
+            data-tipo-group="{{ 'uvt' if i.tipo == 'uvt' else 'ib' }}">
           <td style="max-width:280px;">
             <a href="{{ url_for('instituciones.detail', iid=i.id) }}" style="font-weight:600;color:var(--blue);text-decoration:none;">{{ i.nombre }}</a>
             {% if i.nombre_corto %}<span class="badge" style="font-size:10px;margin-left:4px;background:var(--bg-hover);">{{ i.nombre_corto }}</span>{% endif %}
           </td>
-          <td><span class="badge badge-outline" style="font-size:11px;">{{ i.tipo }}</span></td>
+          <td><span class="badge badge-outline" style="font-size:11px;">{{ 'UVT' if i.tipo == 'uvt' else i.tipo }}</span></td>
           <td class="text-sm">{{ i.municipio or '—' }}</td>
           <td><span class="badge badge-{{ i.estado_vinculo }}" style="font-size:11px;">{{ i.estado_vinculo|replace('_',' ') }}</span></td>
           <td>
@@ -185,6 +333,8 @@
   </div>
 </div>
 
+</div><!-- /table-section -->
+
 <!-- Import modal -->
 <div id="modal-import" class="modal-overlay" style="display:none;" onclick="if(event.target===this)this.style.display='none'">
   <div class="modal" onclick="event.stopPropagation()">
@@ -217,10 +367,36 @@
 <script>
 (function () {
   // ── Server data ───────────────────────────────────────────────────────────────
-  const topPorProyectos = {{ top_by_proyectos | tojson }};
-  const topPorAnrNom    = {{ top_by_anr_nom   | tojson }};
-  const topPorAnrReal   = {{ top_by_anr_real  | tojson }};
-  const ipcFecha        = '{{ ipc_fecha_val }}';
+  const chartData = {
+    todas: {
+      proyectos: {{ top_by_proyectos    | tojson }},
+      anr_nom:   {{ top_by_anr_nom      | tojson }},
+      anr_real:  {{ top_by_anr_real     | tojson }},
+    },
+    ib: {
+      proyectos: {{ top_ib_by_proyectos | tojson }},
+      anr_nom:   {{ top_ib_by_anr_nom   | tojson }},
+      anr_real:  {{ top_ib_by_anr_real  | tojson }},
+    },
+    uvt: {
+      proyectos: {{ top_uvt_by_proyectos | tojson }},
+      anr_nom:   {{ top_uvt_by_anr_nom   | tojson }},
+      anr_real:  {{ top_uvt_by_anr_real  | tojson }},
+    },
+  };
+  const ibPorPrograma = {{ ib_por_programa | tojson }};
+
+  const kpiData = {
+    todas: { total: {{ kpi.total }},     con_proyectos: {{ kpi.con_proyectos }},     total_proyectos: {{ kpi.total_proyectos }},     total_anr: {{ kpi.total_anr|int }},     total_anr_real: {{ kpi.total_anr_real|int }} },
+    ib:    { total: {{ kpi_ib.total }},  con_proyectos: {{ kpi_ib.con_proyectos }},  total_proyectos: {{ kpi_ib.total_proyectos }},  total_anr: {{ kpi_ib.total_anr|int }},  total_anr_real: {{ kpi_ib.total_anr_real|int }} },
+    uvt:   { total: {{ kpi_uvt.total }}, con_proyectos: {{ kpi_uvt.con_proyectos }}, total_proyectos: {{ kpi_uvt.total_proyectos }}, total_anr: {{ kpi_uvt.total_anr|int }}, total_anr_real: {{ kpi_uvt.total_anr_real|int }} },
+  };
+
+  const ipcFecha = '{{ ipc_fecha_val }}';
+
+  // ── State ─────────────────────────────────────────────────────────────────────
+  let currentTab = 'todas';
+  let anrMode    = 'nominal';
 
   // ── Helpers ───────────────────────────────────────────────────────────────────
   function fmtAnr(v) {
@@ -263,50 +439,130 @@
     });
   }
 
-  // ── Charts ────────────────────────────────────────────────────────────────────
-  makeBarChart(
+  // ── Charts init ───────────────────────────────────────────────────────────────
+  const initD = chartData.todas;
+  let chartProyectos = makeBarChart(
     'chart-proyectos',
-    topPorProyectos.map(ibLabel),
-    topPorProyectos.map(i => i.n_proyectos),
+    initD.proyectos.map(ibLabel),
+    initD.proyectos.map(i => i.n_proyectos),
     '#1565C0bb',
     null
   );
 
   let chartAnr = makeBarChart(
     'chart-anr',
-    topPorAnrNom.map(ibLabel),
-    topPorAnrNom.map(i => i.total_anr),
+    initD.anr_nom.map(ibLabel),
+    initD.anr_nom.map(i => i.total_anr),
     '#E65100bb',
     fmtAnr
   );
 
-  // ── ANR switch ────────────────────────────────────────────────────────────────
-  let anrMode = 'nominal';
+  let chartIbPrograma = ibPorPrograma.length > 0
+    ? makeBarChart(
+        'chart-ib-programa',
+        ibPorPrograma.map(p => p.codigo),
+        ibPorPrograma.map(p => p.n_ibs),
+        ibPorPrograma.map(p => (p.color || '#666') + 'cc'),
+        null
+      )
+    : null;
+
+  // ── ANR display ───────────────────────────────────────────────────────────────
+  function updateAnrChart() {
+    if (!chartAnr) return;
+    const isReal = anrMode === 'real';
+    const data   = isReal ? chartData[currentTab].anr_real : chartData[currentTab].anr_nom;
+    const key    = isReal ? 'total_anr_real' : 'total_anr';
+    chartAnr.data.labels = data.map(ibLabel);
+    chartAnr.data.datasets[0].data = data.map(i => i[key]);
+    chartAnr.update();
+  }
+
+  function updateAnrDisplay() {
+    const isReal = anrMode === 'real';
+    const kpiLbl = document.getElementById('kpi-anr-label');
+    if (kpiLbl) kpiLbl.textContent = isReal ? '(real ' + ipcFecha + ')' : '(nominal)';
+    const chartLbl = document.getElementById('chart-anr-mode-label');
+    if (chartLbl) chartLbl.textContent = isReal ? '(real ' + ipcFecha + ')' : '(nominal)';
+
+    const kpiEl = document.getElementById('kpi-anr');
+    if (kpiEl) {
+      const d = kpiData[currentTab];
+      kpiEl.textContent = fmtAnr(isReal ? d.total_anr_real : d.total_anr);
+    }
+
+    document.querySelectorAll('.anr-cell').forEach(function (cell) {
+      const v = parseInt(isReal ? cell.dataset.anrReal : cell.dataset.anr) || 0;
+      cell.textContent = v > 0 ? fmtAnr(v) : '—';
+    });
+
+    if (currentTab !== 'uvt') updateAnrChart();
+  }
 
   window.setAnrMode = function (mode) {
     anrMode = mode;
     document.getElementById('anr-nominal-btn').classList.toggle('active', mode === 'nominal');
     document.getElementById('anr-real-btn').classList.toggle('active', mode === 'real');
+    updateAnrDisplay();
+  };
 
-    const kpiEl = document.getElementById('kpi-anr');
-    if (kpiEl) kpiEl.textContent = fmtAnr(parseInt(mode === 'real' ? kpiEl.dataset.real : kpiEl.dataset.nominal) || 0);
-    const kpiLbl = document.getElementById('kpi-anr-label');
-    if (kpiLbl) kpiLbl.textContent = mode === 'nominal' ? '(nominal)' : '(real ' + ipcFecha + ')';
-    const chartLbl = document.getElementById('chart-anr-mode-label');
-    if (chartLbl) chartLbl.textContent = mode === 'nominal' ? '(nominal)' : '(real ' + ipcFecha + ')';
+  // ── KPIs ──────────────────────────────────────────────────────────────────────
+  function updateKPIs(tab) {
+    const d  = kpiData[tab];
+    const el = id => document.getElementById(id);
+    if (el('kpi-total'))             el('kpi-total').textContent             = d.total;
+    if (el('kpi-total-lbl'))         el('kpi-total-lbl').textContent         = tab === 'uvt' ? 'UVTs registradas' : (tab === 'ib' ? 'IBs registradas' : 'Instituciones registradas');
+    if (el('kpi-con-proyectos'))     el('kpi-con-proyectos').textContent     = d.con_proyectos;
+    if (el('kpi-con-proyectos-lbl')) el('kpi-con-proyectos-lbl').textContent = tab === 'uvt' ? 'UVTs con proyectos' : (tab === 'ib' ? 'IBs con proyectos' : 'Con proyectos');
+    if (el('kpi-total-proyectos'))   el('kpi-total-proyectos').textContent   = d.total_proyectos;
 
-    document.querySelectorAll('.anr-cell').forEach(function (cell) {
-      const v = parseInt(mode === 'real' ? cell.dataset.anrReal : cell.dataset.anr) || 0;
-      cell.textContent = v > 0 ? fmtAnr(v) : '—';
-    });
+    // En tab UVT el ANR refiere solo a proyectos vinculados por text-match; lo ocultamos
+    const anrCard = el('kpi-anr') ? el('kpi-anr').closest('.card') : null;
+    if (anrCard) anrCard.style.display = tab === 'uvt' ? 'none' : '';
 
-    if (chartAnr) {
-      const data = mode === 'real' ? topPorAnrReal : topPorAnrNom;
-      const key  = mode === 'real' ? 'total_anr_real' : 'total_anr';
-      chartAnr.data.labels = data.map(ibLabel);
-      chartAnr.data.datasets[0].data = data.map(i => i[key]);
-      chartAnr.update();
+    if (tab !== 'uvt') updateAnrDisplay();
+  }
+
+  // ── Secciones por tab ─────────────────────────────────────────────────────────
+  function updateSections(tab) {
+    const d        = chartData[tab];
+    const main     = document.getElementById('charts-section');
+    const ibProg   = document.getElementById('ib-programa-section');
+    const uvtSec   = document.getElementById('uvt-section');
+    const tableSec = document.getElementById('table-section');
+
+    // charts-section: todas/ib (si hay datos); oculto en uvt
+    if (main)     main.style.display     = tab !== 'uvt' && d.proyectos.length > 0 ? '' : 'none';
+    // ib-programa: solo en tab ib
+    if (ibProg)   ibProg.style.display   = tab === 'ib' ? '' : 'none';
+    // uvt-section: solo en tab uvt
+    if (uvtSec)   uvtSec.style.display   = tab === 'uvt' ? '' : 'none';
+    // tabla general: solo en tab todas
+    if (tableSec) tableSec.style.display = tab === 'todas' ? '' : 'none';
+
+    if (tab !== 'uvt' && d.proyectos.length > 0) {
+      if (chartProyectos) {
+        chartProyectos.data.labels = d.proyectos.map(ibLabel);
+        chartProyectos.data.datasets[0].data = d.proyectos.map(i => i.n_proyectos);
+        chartProyectos.update();
+      }
+      updateAnrChart();
     }
+
+    if (tab === 'ib' && chartIbPrograma) {
+      chartIbPrograma.resize();
+    }
+  }
+
+  // ── Tab switching ─────────────────────────────────────────────────────────────
+  window.switchTab = function (tab) {
+    currentTab = tab;
+    ['todas', 'ib', 'uvt'].forEach(function (t) {
+      document.getElementById('tab-' + t).classList.toggle('active', t === tab);
+    });
+    applyFilters();
+    updateKPIs(tab);
+    updateSections(tab);
   };
 
   // ── Table filter + sort ───────────────────────────────────────────────────────
@@ -316,16 +572,21 @@
   let sortState = { col: 'proyectos', dir: -1 };
 
   function updateCount() {
+    const tabTotal = currentTab === 'todas'
+      ? rows.length
+      : rows.filter(r => r.dataset.tipoGroup === currentTab).length;
     const vis = rows.filter(r => r.style.display !== 'none').length;
-    countEl.textContent = vis === rows.length
-      ? rows.length + ' registros'
-      : vis + ' de ' + rows.length + ' registros';
+    countEl.textContent = vis === tabTotal
+      ? tabTotal + ' registros'
+      : vis + ' de ' + tabTotal + ' registros';
   }
 
   window.applyFilters = function () {
     const term = (document.getElementById('ib-search')?.value || '').toLowerCase().trim();
     rows.forEach(function (r) {
-      r.style.display = !term || (r.dataset.search || '').toLowerCase().includes(term) ? '' : 'none';
+      const matchTab    = currentTab === 'todas' || r.dataset.tipoGroup === currentTab;
+      const matchSearch = !term || (r.dataset.search || '').toLowerCase().includes(term);
+      r.style.display   = matchTab && matchSearch ? '' : 'none';
     });
     updateCount();
   };
@@ -353,15 +614,15 @@
         );
       }
       const idx = th.cellIndex;
-      const aT = (a.cells[idx]?.textContent || '').trim();
-      const bT = (b.cells[idx]?.textContent || '').trim();
+      const aT  = (a.cells[idx]?.textContent || '').trim();
+      const bT  = (b.cells[idx]?.textContent || '').trim();
       return sortState.dir * aT.localeCompare(bT, 'es');
     });
 
     rows.forEach(r => tbody.appendChild(r));
   };
 
-  updateCount();
+  applyFilters();
 })();
 </script>
 {% endblock %}

@@ -83,6 +83,7 @@
   <div class="tabs">
     <button class="tab-btn active" data-tab="overview">Vista general</button>
     <button class="tab-btn" data-tab="documentos">Documentos ({{ total }})</button>
+    <button class="tab-btn" data-tab="documentacion">Documentación</button>
   </div>
 
   <!-- TAB: Visión general -->
@@ -192,31 +193,6 @@
               </td>
             </tr>
             {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- ── Documentación del programa ──────────────────────────── -->
-    <div class="card" style="margin-top:16px;">
-      <div class="card-header">
-        <span class="card-title">
-          <span class="material-icons-round" style="font-size:17px;vertical-align:middle;margin-right:6px;color:var(--teal);">folder_open</span>
-          Documentación del programa
-        </span>
-      </div>
-      <div class="table-wrapper">
-        <table>
-          <thead>
-            <tr>
-              <th>Documento</th>
-              <th>Link al documento</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td colspan="2" class="text-muted text-sm" style="text-align:center;padding:20px;">Sin documentos cargados aún.</td>
-            </tr>
           </tbody>
         </table>
       </div>
@@ -379,6 +355,105 @@
       </div>
       <div style="padding:10px 16px;border-top:1px solid var(--border);">
         <span class="text-sm text-muted" id="orb-count">{{ total }} documentos</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── TAB: Documentación ──────────────────────────────────────── -->
+  <div class="tab-content" data-tab-content="documentacion">
+
+    {% if can_edit() %}
+    <div class="card mb-3">
+      <div class="card-header">
+        <span class="card-title">
+          <span class="material-icons-round" style="font-size:17px;vertical-align:middle;margin-right:6px;color:var(--teal);">upload_file</span>
+          Subir documento
+        </span>
+      </div>
+      <div class="card-body">
+        <form method="POST" action="{{ url_for('programas.subir_doc_programa', pid=programa.id) }}" enctype="multipart/form-data"
+              style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;">
+          <div style="flex:1;min-width:200px;">
+            <label class="form-label">Nombre del documento <span style="color:var(--red);">*</span></label>
+            <input type="text" name="nombre_doc" class="form-control" placeholder="ej. Resolución de creación" required>
+          </div>
+          <div style="flex:2;min-width:260px;">
+            <label class="form-label">Descripción (opcional)</label>
+            <input type="text" name="descripcion" class="form-control" placeholder="Breve descripción del contenido">
+          </div>
+          <div style="flex:1;min-width:200px;">
+            <label class="form-label">Archivo <span style="color:var(--red);">*</span></label>
+            <input type="file" name="archivo" class="form-control" required>
+          </div>
+          <div>
+            <button type="submit" class="btn btn-primary">
+              <span class="material-icons-round">upload</span> Subir
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">
+          <span class="material-icons-round" style="font-size:17px;vertical-align:middle;margin-right:6px;color:var(--teal);">folder_open</span>
+          Documentación del programa
+        </span>
+        <span class="text-sm text-muted">{{ docs_programa|length }} archivo{{ 's' if docs_programa|length != 1 else '' }}</span>
+      </div>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Documento</th>
+              <th>Descripción</th>
+              <th>Subido por</th>
+              <th>Fecha</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% if docs_programa %}
+              {% for doc in docs_programa %}
+              <tr>
+                <td style="font-weight:600;">
+                  <span class="material-icons-round" style="font-size:15px;vertical-align:middle;margin-right:4px;color:var(--teal);">description</span>
+                  {{ doc.nombre_doc }}
+                </td>
+                <td class="text-sm text-muted">{{ doc.descripcion or '—' }}</td>
+                <td class="text-sm">{{ doc.subido_por_nombre or '—' }}</td>
+                <td class="text-sm text-muted">{{ doc.created_at[:10] if doc.created_at else '—' }}</td>
+                <td style="white-space:nowrap;">
+                  <button class="btn btn-secondary btn-sm btn-icon" title="Vista previa"
+                          onclick="abrirPdfPreview('{{ url_for('programas.ver_doc_programa', pid=programa.id, did=doc.id) }}', '{{ doc.nombre_doc|e }}')">
+                    <span class="material-icons-round">visibility</span>
+                  </button>
+                  <a href="{{ url_for('programas.descargar_doc_programa', pid=programa.id, did=doc.id) }}"
+                     class="btn btn-secondary btn-sm btn-icon" title="Descargar">
+                    <span class="material-icons-round">download</span>
+                  </a>
+                  {% if can_edit() %}
+                  <form method="POST" action="{{ url_for('programas.eliminar_doc_programa', pid=programa.id, did=doc.id) }}"
+                        style="display:inline;" onsubmit="return confirm('¿Eliminar este documento?')">
+                    <button type="submit" class="btn btn-danger btn-sm btn-icon" title="Eliminar">
+                      <span class="material-icons-round">delete</span>
+                    </button>
+                  </form>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            {% else %}
+              <tr>
+                <td colspan="5" class="text-muted text-sm" style="text-align:center;padding:24px;">
+                  Sin documentos cargados aún.
+                </td>
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
       </div>
     </div>
   </div>
@@ -639,5 +714,32 @@ function filterOrb() {
 });
 
 document.addEventListener('DOMContentLoaded', buildOrbCharts);
+
+/* ── PDF Preview modal ── */
+function abrirPdfPreview(url, titulo) {
+  document.getElementById('pdf-modal-title').textContent = titulo;
+  document.getElementById('pdf-modal-frame').src = url;
+  document.getElementById('pdf-modal').style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+function cerrarPdfPreview() {
+  document.getElementById('pdf-modal').style.display = 'none';
+  document.getElementById('pdf-modal-frame').src = '';
+  document.body.style.overflow = '';
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') cerrarPdfPreview(); });
 </script>
+
+<!-- Modal previsualización PDF -->
+<div id="pdf-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.55);align-items:center;justify-content:center;padding:24px;">
+  <div style="background:#fff;border-radius:14px;width:100%;max-width:960px;height:90vh;display:flex;flex-direction:column;box-shadow:0 24px 80px rgba(0,0,0,.35);overflow:hidden;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border);flex-shrink:0;">
+      <span id="pdf-modal-title" style="font-weight:700;font-size:15px;color:var(--text);"></span>
+      <button onclick="cerrarPdfPreview()" style="background:none;border:none;cursor:pointer;color:var(--text-muted);display:flex;align-items:center;">
+        <span class="material-icons-round">close</span>
+      </button>
+    </div>
+    <iframe id="pdf-modal-frame" src="" style="flex:1;border:none;width:100%;"></iframe>
+  </div>
+</div>
 {% endblock %}

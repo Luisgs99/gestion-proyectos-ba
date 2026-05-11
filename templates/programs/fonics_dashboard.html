@@ -84,6 +84,7 @@
     <button class="tab-btn active" data-tab="vista_general">Vista general</button>
     <button class="tab-btn" data-tab="proyectos">Proyectos ({{ total }})</button>
     <button class="tab-btn" data-tab="hitos">Avance por Hitos</button>
+    <button class="tab-btn" data-tab="documentacion">Documentación</button>
   </div>
 
   <!-- Proyectos -->
@@ -173,30 +174,6 @@
       </div>
     </div>
 
-    <!-- ── Documentación del programa ──────────────────────────── -->
-    <div class="card" style="margin-top:16px;">
-      <div class="card-header">
-        <span class="card-title">
-          <span class="material-icons-round" style="font-size:17px;vertical-align:middle;margin-right:6px;color:var(--teal);">folder_open</span>
-          Documentación del programa
-        </span>
-      </div>
-      <div class="table-wrapper">
-        <table>
-          <thead>
-            <tr>
-              <th>Documento</th>
-              <th>Link al documento</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td colspan="2" class="text-muted text-sm" style="text-align:center;padding:20px;">Sin documentos cargados aún.</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
   </div>
 
   <!-- Hitos -->
@@ -232,6 +209,33 @@
           </div>
           {% endfor %}
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── TAB: Documentación ──────────────────────────────────────── -->
+  <div class="tab-content" data-tab-content="documentacion">
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">
+          <span class="material-icons-round" style="font-size:17px;vertical-align:middle;margin-right:6px;color:var(--teal);">folder_open</span>
+          Documentación del programa
+        </span>
+      </div>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Documento</th>
+              <th>Link al documento</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td colspan="2" class="text-muted text-sm" style="text-align:center;padding:20px;">Sin documentos cargados aún.</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
   </div>

@@ -1,6 +1,13 @@
 {% extends "base.html" %}
 {% block extra_head %}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+<style>
+  .esp-main-row:hover { background: var(--surface-2) !important; }
+  .esp-main-row:hover .esp-chevron { color: var(--teal) !important; }
+  .esp-expand-row td { padding: 0; }
+  .esp-yr-chip { cursor:pointer;transition:background .15s,color .15s,border-color .15s; }
+  .esp-yr-chip:hover { border-color:var(--teal) !important; }
+</style>
 {% endblock %}
 {% block title %}Clínica Tecnológica — Dashboard{% endblock %}
 {% block breadcrumb %}
@@ -123,6 +130,7 @@
     <button class="tab-btn" data-tab="especialistas">Especialistas</button>
     <button class="tab-btn" data-tab="anios">Evolución anual</button>
     <button class="tab-btn" data-tab="empresas">Empresas ({{ total }})</button>
+    <button class="tab-btn" data-tab="documentacion">Documentación</button>
   </div>
 
   <!-- ── TAB: Vista general ────────────────────────────────────── -->
@@ -217,30 +225,6 @@
       </div>
     </div>
 
-    <!-- ── Documentación del programa ──────────────────────────── -->
-    <div class="card" style="margin-top:4px;">
-      <div class="card-header">
-        <span class="card-title">
-          <span class="material-icons-round" style="font-size:17px;vertical-align:middle;margin-right:6px;color:var(--teal);">folder_open</span>
-          Documentación del programa
-        </span>
-      </div>
-      <div class="table-wrapper">
-        <table>
-          <thead>
-            <tr>
-              <th>Documento</th>
-              <th>Link al documento</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td colspan="2" class="text-muted text-sm" style="text-align:center;padding:20px;">Sin documentos cargados aún.</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
   </div>
 
   <!-- ── TAB: Pipeline ──────────────────────────────────────────── -->
@@ -481,6 +465,7 @@
         <table>
           <thead>
             <tr>
+              <th style="width:36px;padding-left:8px;"></th>
               <th>Especialista</th>
               <th>Total asignados</th>
               <th>Finalizados</th>
@@ -491,7 +476,10 @@
           </thead>
           <tbody>
             {% for e in por_especialista %}
-            <tr>
+            <tr class="esp-main-row" style="cursor:pointer;" onclick="clinEspToggle('esp{{ loop.index }}')">
+              <td style="text-align:center;padding:8px 4px;width:36px;">
+                <span id="esp-chevron-esp{{ loop.index }}" class="material-icons-round esp-chevron" style="font-size:18px;color:var(--text-muted);transition:transform .25s;display:block;line-height:1;">expand_more</span>
+              </td>
               <td style="font-weight:700;font-size:13.5px;">{{ e.especialista }}</td>
               <td><strong>{{ e.n }}</strong></td>
               <td><span class="badge badge-finalizado">{{ e.finalizados }}</span></td>
@@ -509,6 +497,9 @@
                   data-real="{{ e.monto_avg_real|int }}">
                 {% if e.monto_avg > 0 %}${{ "%.0f"|format(e.monto_avg/1000) }}K{% else %}<span class="text-muted">—</span>{% endif %}
               </td>
+            </tr>
+            <tr id="esp-det-esp{{ loop.index }}" class="esp-expand-row" data-esp="{{ e.especialista }}" style="display:none;">
+              <td colspan="7" style="padding:0;"></td>
             </tr>
             {% endfor %}
           </tbody>
@@ -660,6 +651,33 @@
       </div>
       <div style="padding:10px 16px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
         <span class="text-sm text-muted" id="clic-count">{{ total }} empresas</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── TAB: Documentación ──────────────────────────────────────── -->
+  <div class="tab-content" data-tab-content="documentacion">
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">
+          <span class="material-icons-round" style="font-size:17px;vertical-align:middle;margin-right:6px;color:var(--teal);">folder_open</span>
+          Documentación del programa
+        </span>
+      </div>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Documento</th>
+              <th>Link al documento</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td colspan="2" class="text-muted text-sm" style="text-align:center;padding:20px;">Sin documentos cargados aún.</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
   </div>
@@ -1153,6 +1171,182 @@ function onClinicaMapTabClick() {
     }
     clinicaMap.invalidateSize();
   }, 200);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ESPECIALISTAS — FILAS EXPANDIBLES CON FILTRO POR AÑO
+═══════════════════════════════════════════════════════════════ */
+const CLIN_ESP_PROJ = {{ esp_proyectos_for_js|tojson }};
+
+/* Índice por especialista */
+const clinEspMap = {};
+CLIN_ESP_PROJ.forEach(p => {
+  if (!clinEspMap[p.especialista]) clinEspMap[p.especialista] = [];
+  clinEspMap[p.especialista].push(p);
+});
+
+/* Proyectos completos por rowId (para re-renderizar al filtrar) */
+const clinEspStore = {};
+
+const _SIT_LABEL = {
+  'Averiguando interés':       'Averiguando interés',
+  '1.Derivado a Clínico':      'Derivado a Clínico',
+  '2.Empresa en stand-by':     'Stand-by',
+  '3.Visita programada':       'Visita programada',
+  '4.Diagnóstico En Proceso':  'En proceso',
+  '5.Diagnóstico Finalizado':  'Finalizado',
+  '2.Empresa no interesada':   'No interesada',
+  '0.Empresa no válida':       'No válida',
+  '0.Municipio no priorizado': 'Mun. no priorizado',
+};
+const _SIT_BADGE = {
+  '5.Diagnóstico Finalizado':  'finalizado',
+  '4.Diagnóstico En Proceso':  'activo',
+  '3.Visita programada':       'en_proceso',
+  '1.Derivado a Clínico':      'en_proceso',
+  'Averiguando interés':       'pendiente',
+  '2.Empresa en stand-by':     'en_finalizacion',
+  '2.Empresa no interesada':   'suspendido',
+  '0.Empresa no válida':       'suspendido',
+  '0.Municipio no priorizado': 'suspendido',
+};
+const _SIT_ORDER = [
+  '5.Diagnóstico Finalizado', '4.Diagnóstico En Proceso', '3.Visita programada',
+  '1.Derivado a Clínico', 'Averiguando interés', '2.Empresa en stand-by',
+  '2.Empresa no interesada', '0.Empresa no válida', '0.Municipio no priorizado',
+];
+const _SIT_SORT = Object.fromEntries(_SIT_ORDER.map((s, i) => [s, i]));
+
+function clinEspToggle(rowId) {
+  const detRow = document.getElementById('esp-det-' + rowId);
+  const icon   = document.getElementById('esp-chevron-' + rowId);
+  if (!detRow) return;
+  const isOpen = detRow.style.display !== 'none';
+  detRow.style.display = isOpen ? 'none' : '';
+  if (icon) icon.style.transform = isOpen ? '' : 'rotate(180deg)';
+  if (!isOpen && !detRow.dataset.built) {
+    detRow.dataset.built = '1';
+    const espName = detRow.dataset.esp;
+    const projs   = clinEspMap[espName] || [];
+    clinEspStore[rowId] = projs;
+    detRow.querySelector('td').innerHTML = clinEspBuildDetail(projs, rowId);
+  }
+}
+
+/* Renderiza solo el grid de 3 columnas (se usa también al filtrar) */
+function clinEspGridHtml(projs) {
+  /* Situaciones */
+  const sitCnt = {};
+  projs.forEach(p => { sitCnt[p.sit] = (sitCnt[p.sit] || 0) + 1; });
+  const sitHtml = _SIT_ORDER.filter(s => sitCnt[s]).map(s => {
+    const cls = _SIT_BADGE[s] || 'pendiente';
+    const lbl = _SIT_LABEL[s] || s;
+    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border);">
+      <span style="font-size:12.5px;">${lbl}</span>
+      <span class="badge badge-${cls}" style="font-size:10px;min-width:22px;text-align:center;">${sitCnt[s]}</span>
+    </div>`;
+  }).join('') || '<span class="text-muted" style="font-size:12px;">Sin datos</span>';
+
+  /* Municipios */
+  const munCnt = {};
+  projs.forEach(p => { if (p.municipio) munCnt[p.municipio] = (munCnt[p.municipio] || 0) + 1; });
+  const munList = Object.entries(munCnt).sort((a, b) => b[1] - a[1]);
+  let munHtml = munList.slice(0, 12).map(([m, n]) =>
+    `<div style="display:flex;align-items:center;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border);">
+      <span style="font-size:12px;">${m}</span>
+      <span style="font-weight:700;font-size:12px;color:var(--teal);">${n}</span>
+    </div>`
+  ).join('');
+  if (munList.length > 12) munHtml += `<div class="text-muted" style="font-size:11px;padding-top:5px;">+${munList.length - 12} municipios más</div>`;
+  if (!munHtml) munHtml = '<span class="text-muted" style="font-size:12px;">Sin municipios registrados</span>';
+
+  /* Empresas */
+  const sorted = [...projs].sort((a, b) => (_SIT_SORT[a.sit] ?? 99) - (_SIT_SORT[b.sit] ?? 99));
+  let empHtml = sorted.slice(0, 25).map(p => {
+    const cls = _SIT_BADGE[p.sit] || 'pendiente';
+    const lbl = _SIT_LABEL[p.sit] || p.sit;
+    const nom = p.nombre.length > 52 ? p.nombre.slice(0, 52) + '…' : p.nombre;
+    const mun = p.municipio ? `<span style="font-size:10.5px;color:var(--text-muted);">${p.municipio}</span>` : '';
+    const mto = p.monto > 0 ? `<span class="mono" style="font-size:10px;color:var(--text-muted);white-space:nowrap;">$${Math.round(p.monto / 1000)}K</span>` : '';
+    const yr  = p.anio    ? `<span style="font-size:10px;color:var(--text-muted);">${p.anio}</span>` : '';
+    return `<div style="display:flex;align-items:flex-start;gap:7px;padding:5px 0;border-bottom:1px solid var(--border);">
+      <span class="badge badge-${cls}" style="font-size:9.5px;margin-top:2px;white-space:nowrap;flex-shrink:0;">${lbl}</span>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:12px;font-weight:600;line-height:1.3;">${nom}</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:2px;">${mun}${yr}${mto}</div>
+      </div>
+    </div>`;
+  }).join('');
+  if (projs.length > 25) empHtml += `<div class="text-muted" style="font-size:11px;padding-top:6px;">+${projs.length - 25} empresas más…</div>`;
+
+  return `<div style="padding:14px 16px;border-right:1px solid var(--border);min-height:60px;">
+      <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted);margin-bottom:8px;">Estado diagnósticos</div>
+      ${sitHtml}
+    </div>
+    <div style="padding:14px 16px;border-right:1px solid var(--border);min-height:60px;">
+      <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted);margin-bottom:8px;">Municipios (${munList.length})</div>
+      ${munHtml}
+    </div>
+    <div style="padding:14px 16px;max-height:340px;overflow-y:auto;">
+      <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted);margin-bottom:8px;">Empresas (${projs.length})</div>
+      ${empHtml}
+    </div>`;
+}
+
+/* Construye el panel completo (chips + grid) la primera vez */
+function clinEspBuildDetail(allProjs, rowId) {
+  /* Chips de cohorte — conteos sobre el total de proyectos */
+  const anioCnt = {};
+  allProjs.forEach(p => { if (p.anio) anioCnt[p.anio] = (anioCnt[p.anio] || 0) + 1; });
+  const anioEntries = Object.entries(anioCnt).sort((a, b) => a[0] - b[0]);
+
+  let chipsHtml = '';
+  if (anioEntries.length > 1) {
+    /* "Todos" chip — activo por defecto */
+    chipsHtml = `<span class="esp-yr-chip" id="esp-chip-${rowId}-all" data-row="${rowId}" data-yr=""
+        onclick="clinEspFilterYear('${rowId}','')"
+        style="display:inline-flex;align-items:center;gap:3px;background:var(--teal);color:#fff;border:1px solid var(--teal);border-radius:20px;padding:3px 10px;font-size:11px;font-weight:600;">
+        Todos <span style="opacity:.85;">(${allProjs.length})</span>
+      </span>`;
+    chipsHtml += anioEntries.map(([y, n]) =>
+      `<span class="esp-yr-chip" id="esp-chip-${rowId}-${y}" data-row="${rowId}" data-yr="${y}"
+          onclick="clinEspFilterYear('${rowId}','${y}')"
+          style="display:inline-flex;align-items:center;gap:3px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:20px;padding:3px 10px;font-size:11px;font-weight:600;">
+          ${y} <span style="color:var(--teal);">(${n})</span>
+        </span>`
+    ).join('');
+  }
+
+  const anioBar = chipsHtml
+    ? `<div style="padding:9px 16px 8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;border-bottom:1px solid var(--border);">
+        <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted);margin-right:4px;">Cohortes:</span>
+        ${chipsHtml}
+       </div>` : '';
+
+  return `<div style="background:var(--surface-2);border-bottom:2px solid var(--border);">
+    ${anioBar}
+    <div id="esp-grid-${rowId}" style="display:grid;grid-template-columns:190px 210px 1fr;align-items:start;">
+      ${clinEspGridHtml(allProjs)}
+    </div>
+  </div>`;
+}
+
+/* Filtra y re-renderiza el grid al hacer click en un chip */
+function clinEspFilterYear(rowId, yr) {
+  const allProjs  = clinEspStore[rowId] || [];
+  const filtered  = yr ? allProjs.filter(p => String(p.anio) === String(yr)) : allProjs;
+  const grid = document.getElementById('esp-grid-' + rowId);
+  if (grid) grid.innerHTML = clinEspGridHtml(filtered);
+
+  /* Actualiza estilos de chips */
+  document.querySelectorAll(`[data-row="${rowId}"].esp-yr-chip`).forEach(chip => {
+    const isActive = chip.dataset.yr === yr;
+    chip.style.background   = isActive ? 'var(--teal)' : 'var(--surface)';
+    chip.style.color        = isActive ? '#fff'        : 'var(--text)';
+    chip.style.borderColor  = isActive ? 'var(--teal)' : 'var(--border)';
+    const sub = chip.querySelector('span');
+    if (sub) sub.style.color = isActive ? 'rgba(255,255,255,.85)' : 'var(--teal)';
+  });
 }
 </script>
 {% endblock %}
