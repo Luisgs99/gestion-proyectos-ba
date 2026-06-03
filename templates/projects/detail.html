@@ -331,36 +331,22 @@
         <table style="width:100%;border-collapse:collapse;">
           <tr><td class="text-muted text-sm" style="padding:7px 0;width:40%;border-bottom:1px solid var(--border);">Programa</td><td style="border-bottom:1px solid var(--border);"><span class="tag">{{ proyecto.programa_codigo }}</span></td></tr>
           <tr><td class="text-muted text-sm" style="padding:7px 0;border-bottom:1px solid var(--border);">Código/Expediente</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.codigo or '—' }}</td></tr>
-          <tr><td class="text-muted text-sm" style="padding:7px 0;border-bottom:1px solid var(--border);">Área temática</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.area_tematica or '—' }}</td></tr>
-          <tr><td class="text-muted text-sm" style="padding:7px 0;border-bottom:1px solid var(--border);">Inicio previsto</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.fecha_inicio or '—' }}</td></tr>
-          <tr><td class="text-muted text-sm" style="padding:7px 0;border-bottom:1px solid var(--border);">Fin previsto</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.fecha_fin_prevista or '—' }}</td></tr>
-          <tr><td class="text-muted text-sm" style="padding:7px 0;border-bottom:1px solid var(--border);">Fin real</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.fecha_fin_real or '—' }}</td></tr>
-          <tr><td class="text-muted text-sm" style="padding:7px 0;">Agente responsable</td><td>{{ (proyecto.agente_nombre or '') + ' ' + (proyecto.agente_apellido or '') or '—' }}</td></tr>
+          {% if proyecto.adoptante %}<tr><td class="text-muted text-sm" style="padding:7px 0;border-bottom:1px solid var(--border);">Adoptante</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.adoptante }}{% if proyecto.tipo_adoptante %} <span class="text-sm text-muted">({{ proyecto.tipo_adoptante|replace('_',' ') }})</span>{% endif %}</td></tr>{% endif %}
+          {% if proyecto.linea %}<tr><td class="text-muted text-sm" style="padding:7px 0;border-bottom:1px solid var(--border);">Línea</td><td style="border-bottom:1px solid var(--border);"><strong>Línea {{ proyecto.linea }}</strong></td></tr>{% endif %}
+          {% if proyecto.anio %}<tr><td class="text-muted text-sm" style="padding:7px 0;border-bottom:1px solid var(--border);">Año convocatoria</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.anio }}</td></tr>{% endif %}
+          {% if proyecto.director %}<tr><td class="text-muted text-sm" style="padding:7px 0;border-bottom:1px solid var(--border);">Director/a</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.director }}</td></tr>{% endif %}
+          {% if proyecto.uvt %}<tr><td class="text-muted text-sm" style="padding:7px 0;border-bottom:1px solid var(--border);">UVT</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.uvt }}</td></tr>{% endif %}
+          {% if proyecto.ib2 %}<tr><td class="text-muted text-sm" style="padding:7px 0;border-bottom:1px solid var(--border);">Institución beneficiaria (IB2)</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.ib2 }}</td></tr>{% endif %}
+          {% if proyecto.n_investigadores %}<tr><td class="text-muted text-sm" style="padding:7px 0;border-bottom:1px solid var(--border);">Investigadores</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.n_investigadores }} ({{ proyecto.n_mujeres or 0 }} mujeres)</td></tr>{% endif %}
+          {% if proyecto.sector_actividad_1 %}<tr><td class="text-muted text-sm" style="padding:7px 0;border-bottom:1px solid var(--border);">Sector adoptante</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.sector_actividad_1 }}{% if proyecto.sector_actividad_2 %}, {{ proyecto.sector_actividad_2 }}{% endif %}</td></tr>{% endif %}
+          {% if proyecto.sector_tema %}<tr><td class="text-muted text-sm" style="padding:7px 0;border-bottom:1px solid var(--border);">Sector temático</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.sector_tema }}</td></tr>{% endif %}
+          {% if proyecto.anr_actualizado %}<tr><td class="text-muted text-sm" style="padding:7px 0;border-bottom:1px solid var(--border);">ANR actualizado</td><td style="border-bottom:1px solid var(--border);font-weight:600;">${{ "{:,.0f}".format(proyecto.anr_actualizado) }}</td></tr>{% endif %}
+          {% if proyecto.seccion %}<tr><td class="text-muted text-sm" style="padding:7px 0;border-bottom:1px solid var(--border);">Sección electoral</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.seccion }}</td></tr>{% endif %}
+          {% if proyecto.contacto_nombre or proyecto.contacto_email %}<tr><td class="text-muted text-sm" style="padding:7px 0;border-bottom:1px solid var(--border);">Contacto</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.contacto_nombre or '' }}{% if proyecto.contacto_email %} · <span class="text-muted">{{ proyecto.contacto_email }}</span>{% endif %}{% if proyecto.contacto_telefono %} · {{ proyecto.contacto_telefono }}{% endif %}</td></tr>{% endif %}
         </table>
         {% if proyecto.descripcion %}
         <div class="section-title mt-2">Descripción</div>
         <p class="text-sm" style="line-height:1.7;">{{ proyecto.descripcion }}</p>
-        {% endif %}
-        {% if proyecto.contacto_nombre or proyecto.contacto_email %}
-        <div class="section-title mt-2">Contacto</div>
-        <p class="text-sm">{{ proyecto.contacto_nombre or '' }}</p>
-        <p class="text-sm text-muted">{{ proyecto.contacto_email or '' }}{% if proyecto.contacto_telefono %} · {{ proyecto.contacto_telefono }}{% endif %}</p>
-        {% endif %}
-
-        {% if proyecto.linea or proyecto.anio or proyecto.director %}
-        <div class="section-title mt-2">Datos FITBA</div>
-        <table style="width:100%;border-collapse:collapse;">
-          {% if proyecto.linea %}<tr><td class="text-muted text-sm" style="padding:6px 0;width:40%;border-bottom:1px solid var(--border);">Línea</td><td style="border-bottom:1px solid var(--border);"><strong>Línea {{ proyecto.linea }}</strong></td></tr>{% endif %}
-          {% if proyecto.anio %}<tr><td class="text-muted text-sm" style="padding:6px 0;border-bottom:1px solid var(--border);">Año convocatoria</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.anio }}</td></tr>{% endif %}
-          {% if proyecto.director %}<tr><td class="text-muted text-sm" style="padding:6px 0;border-bottom:1px solid var(--border);">Director/a</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.director }}</td></tr>{% endif %}
-          {% if proyecto.uvt %}<tr><td class="text-muted text-sm" style="padding:6px 0;border-bottom:1px solid var(--border);">UVT</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.uvt }}</td></tr>{% endif %}
-          {% if proyecto.ib2 %}<tr><td class="text-muted text-sm" style="padding:6px 0;border-bottom:1px solid var(--border);">Institución beneficiaria (IB2)</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.ib2 }}</td></tr>{% endif %}
-          {% if proyecto.n_investigadores %}<tr><td class="text-muted text-sm" style="padding:6px 0;border-bottom:1px solid var(--border);">Investigadores</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.n_investigadores }} ({{ proyecto.n_mujeres or 0 }} mujeres)</td></tr>{% endif %}
-          {% if proyecto.sector_actividad_1 %}<tr><td class="text-muted text-sm" style="padding:6px 0;border-bottom:1px solid var(--border);">Sector adoptante</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.sector_actividad_1 }}{% if proyecto.sector_actividad_2 %}, {{ proyecto.sector_actividad_2 }}{% endif %}</td></tr>{% endif %}
-          {% if proyecto.sector_tema %}<tr><td class="text-muted text-sm" style="padding:6px 0;border-bottom:1px solid var(--border);">Sector temático</td><td style="border-bottom:1px solid var(--border);">{{ proyecto.sector_tema }}</td></tr>{% endif %}
-          {% if proyecto.anr_actualizado %}<tr><td class="text-muted text-sm" style="padding:6px 0;border-bottom:1px solid var(--border);">ANR actualizado</td><td style="border-bottom:1px solid var(--border);font-weight:600;">${{ "{:,.0f}".format(proyecto.anr_actualizado) }}</td></tr>{% endif %}
-          {% if proyecto.seccion %}<tr><td class="text-muted text-sm" style="padding:6px 0;">Sección electoral</td><td>{{ proyecto.seccion }}</td></tr>{% endif %}
-        </table>
         {% endif %}
         {% endif %}
 

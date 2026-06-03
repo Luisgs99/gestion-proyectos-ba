@@ -21,7 +21,9 @@
       "Bash(xargs grep *)",
       "Bash(sqlite3 *)",
       "Bash(py update_instituciones.py)",
-      "Bash(del *)"
+      "Bash(del *)",
+      "Bash(Get-ChildItem -Force)",
+      "Bash(Select-Object Name, Mode)"
     ]
   }
 }

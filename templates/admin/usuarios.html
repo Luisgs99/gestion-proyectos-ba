@@ -26,6 +26,7 @@
           <th>Usuario</th>
           <th>Email</th>
           <th>Rol</th>
+          <th>Acceso</th>
           <th>Estado</th>
           <th>Alta</th>
           <th>Acciones</th>
@@ -44,6 +45,13 @@
           </td>
           <td class="text-sm">{{ u.email }}</td>
           <td><span class="badge badge-{{ u.rol }}">{{ u.rol }}</span></td>
+          <td>
+            {% if u.programa_acceso %}
+              <span class="badge" style="background:#E3F2FD;color:#1565C0;border:1px solid #BBDEFB;">Solo {{ u.programa_acceso }}</span>
+            {% else %}
+              <span class="text-muted text-sm">—</span>
+            {% endif %}
+          </td>
           <td>{% if u.activo %}<span class="badge badge-activo">Activo</span>{% else %}<span class="badge badge-suspendido">Inactivo</span>{% endif %}</td>
           <td class="text-sm text-muted">{{ u.created_at[:10] if u.created_at else '—' }}</td>
           <td>

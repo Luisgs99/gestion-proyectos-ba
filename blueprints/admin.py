@@ -99,36 +99,43 @@ def usuarios():
 @bp.route('/admin/usuarios/nuevo', methods=['GET', 'POST'])
 @admin_required
 def usuario_nuevo():
+    programas = query("SELECT * FROM programas WHERE activo=1 ORDER BY nombre")
     if request.method == 'POST':
-        d       = request.form
-        hash_pw = generate_password_hash(d.get('password'))
+        d              = request.form
+        hash_pw        = generate_password_hash(d.get('password'))
+        programa_acceso = d.get('programa_acceso') or None
         try:
-            execute("""INSERT INTO users (nombre, apellido, email, password_hash, rol)
-                       VALUES (?,?,?,?,?)""",
-                    (d.get('nombre'), d.get('apellido'), d.get('email'), hash_pw, d.get('rol', 'agente')))
+            execute("""INSERT INTO users (nombre, apellido, email, password_hash, rol, programa_acceso)
+                       VALUES (?,?,?,?,?,?)""",
+                    (d.get('nombre'), d.get('apellido'), d.get('email'), hash_pw,
+                     d.get('rol', 'agente'), programa_acceso))
             flash('Usuario creado.', 'success')
         except Exception as e:
             flash(f'Error: {str(e)}', 'danger')
         return redirect(url_for('admin.usuarios'))
-    return render_template('admin/usuario_form.html', usuario=None)
+    return render_template('admin/usuario_form.html', usuario=None, programas=programas)
 
 
 @bp.route('/admin/usuarios/<int:uid>/editar', methods=['GET', 'POST'])
 @admin_required
 def usuario_editar(uid):
-    usuario = query("SELECT * FROM users WHERE id=?", (uid,), one=True)
+    usuario   = query("SELECT * FROM users WHERE id=?", (uid,), one=True)
+    programas = query("SELECT * FROM programas WHERE activo=1 ORDER BY nombre")
     if request.method == 'POST':
-        d = request.form
+        d               = request.form
+        programa_acceso = d.get('programa_acceso') or None
         if d.get('password'):
             hash_pw = generate_password_hash(d.get('password'))
-            execute("UPDATE users SET nombre=?, apellido=?, email=?, password_hash=?, rol=?, activo=? WHERE id=?",
-                    (d.get('nombre'), d.get('apellido'), d.get('email'), hash_pw, d.get('rol'), int(d.get('activo', 1)), uid))
+            execute("UPDATE users SET nombre=?, apellido=?, email=?, password_hash=?, rol=?, activo=?, programa_acceso=? WHERE id=?",
+                    (d.get('nombre'), d.get('apellido'), d.get('email'), hash_pw,
+                     d.get('rol'), int(d.get('activo', 1)), programa_acceso, uid))
         else:
-            execute("UPDATE users SET nombre=?, apellido=?, email=?, rol=?, activo=? WHERE id=?",
-                    (d.get('nombre'), d.get('apellido'), d.get('email'), d.get('rol'), int(d.get('activo', 1)), uid))
+            execute("UPDATE users SET nombre=?, apellido=?, email=?, rol=?, activo=?, programa_acceso=? WHERE id=?",
+                    (d.get('nombre'), d.get('apellido'), d.get('email'),
+                     d.get('rol'), int(d.get('activo', 1)), programa_acceso, uid))
         flash('Usuario actualizado.', 'success')
         return redirect(url_for('admin.usuarios'))
-    return render_template('admin/usuario_form.html', usuario=usuario)
+    return render_template('admin/usuario_form.html', usuario=usuario, programas=programas)
 
 
 @bp.route('/admin/usuarios/<int:uid>/eliminar', methods=['POST'])

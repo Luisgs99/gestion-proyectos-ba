@@ -4,7 +4,7 @@ from datetime import date
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash, jsonify, send_file, current_app
 from werkzeug.utils import secure_filename
 from database import query, execute
-from helpers.auth import login_required, editor_required, admin_required
+from helpers.auth import login_required, editor_required, admin_required, get_programa_acceso
 from helpers.filtros import get_filtros_config, get_filter_options, apply_filtros
 
 bp = Blueprint('proyectos', __name__)
@@ -22,6 +22,13 @@ def list():
     programa_id = request.args.get('programa_id', '')
     search      = request.args.get('q', '')
 
+    # Si el usuario tiene acceso restringido a un programa, forzar filtro
+    prog_acceso = get_programa_acceso()
+    if prog_acceso and not programa_id:
+        prog_row = query("SELECT id FROM programas WHERE codigo=?", (prog_acceso,), one=True)
+        if prog_row:
+            programa_id = str(prog_row['id'])
+
     sql = """
         SELECT p.*, pr.nombre as programa_nombre, pr.codigo as programa_codigo,
                pr.color as programa_color, u.nombre as agente_nombre, u.apellido as agente_apellido
@@ -36,7 +43,10 @@ def list():
         sql += " AND (p.agente_id=? OR EXISTS (SELECT 1 FROM asignaciones a WHERE a.proyecto_id=p.id AND a.agente_id=?))"
         args.extend([session['user_id'], session['user_id']])
 
-    if programa_id:
+    if prog_acceso:
+        sql += " AND pr.codigo=?"
+        args.append(prog_acceso)
+    elif programa_id:
         sql += " AND p.programa_id=?"
         args.append(programa_id)
 
@@ -57,7 +67,10 @@ def list():
 
     sql += " ORDER BY pr.id, p.nombre"
     proyectos = query(sql, args)
-    programas = query("SELECT * FROM programas WHERE activo=1 ORDER BY id")
+    if prog_acceso:
+        programas = query("SELECT * FROM programas WHERE codigo=? AND activo=1", (prog_acceso,))
+    else:
+        programas = query("SELECT * FROM programas WHERE activo=1 ORDER BY id")
 
     return render_template('projects/list.html',
         proyectos=proyectos, programas=programas,
@@ -122,6 +135,11 @@ def detail(pid):
         flash('Proyecto no encontrado.', 'danger')
         return redirect(url_for('proyectos.list'))
 
+    prog_acceso = get_programa_acceso()
+    if prog_acceso and proyecto['programa_codigo'] != prog_acceso:
+        flash('No tenés acceso a este proyecto.', 'danger')
+        return redirect(url_for('proyectos.list'))
+
     anio_proy = proyecto['anio'] if proyecto['anio'] else None
     hitos_avances = query("""
         SELECT h.*, ah.estado as avance_estado, ah.porcentaje, ah.fecha_prevista,
@@ -173,9 +191,16 @@ def detail(pid):
 @bp.route('/proyectos/<int:pid>/editar', methods=['GET', 'POST'])
 @editor_required
 def editar(pid):
-    proyecto  = query("SELECT * FROM proyectos WHERE id=?", (pid,), one=True)
+    proyecto = query("""
+        SELECT p.*, pr.codigo as programa_codigo FROM proyectos p
+        JOIN programas pr ON p.programa_id = pr.id WHERE p.id=?
+    """, (pid,), one=True)
     if not proyecto:
         flash('Proyecto no encontrado.', 'danger')
+        return redirect(url_for('proyectos.list'))
+    prog_acceso = get_programa_acceso()
+    if prog_acceso and proyecto['programa_codigo'] != prog_acceso:
+        flash('No tenés acceso a este proyecto.', 'danger')
         return redirect(url_for('proyectos.list'))
     programas = query("SELECT * FROM programas WHERE activo=1 ORDER BY nombre")
     agentes   = query("SELECT * FROM users WHERE rol='agente' AND activo=1 ORDER BY apellido")

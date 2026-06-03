@@ -5,7 +5,7 @@ from werkzeug.utils import secure_filename
 from flask import (Blueprint, render_template, redirect, url_for,
                    flash, session, request, send_file, current_app)
 from database import query, execute
-from helpers.auth import login_required, editor_required, can_edit
+from helpers.auth import login_required, editor_required, can_edit, get_programa_acceso
 from helpers.ipc import build_ipc_join, get_ipc_config, ipc_anr_expr
 
 bp = Blueprint('programas', __name__)
@@ -21,6 +21,11 @@ def _prog_docs_folder():
 @bp.route('/programas')
 @login_required
 def list():
+    prog_acceso = get_programa_acceso()
+    if prog_acceso:
+        prog = query("SELECT * FROM programas WHERE codigo=? AND activo=1", (prog_acceso,), one=True)
+        if prog:
+            return redirect(url_for('programas.detail', pid=prog['id']))
     programas = query("SELECT * FROM programas WHERE activo=1 ORDER BY id")
     return render_template('programs/list.html', programas=programas)
 
@@ -41,6 +46,11 @@ def detail(pid):
     programa = query("SELECT * FROM programas WHERE id=?", (pid,), one=True)
     if not programa:
         flash('Programa no encontrado.', 'danger')
+        return redirect(url_for('programas.list'))
+
+    prog_acceso = get_programa_acceso()
+    if prog_acceso and programa['codigo'] != prog_acceso:
+        flash('No tenés acceso a este programa.', 'danger')
         return redirect(url_for('programas.list'))
 
     if session.get('rol') == 'agente':

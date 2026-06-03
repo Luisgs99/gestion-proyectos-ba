@@ -41,6 +41,18 @@
           <option value="admin" {% if usuario and usuario.rol == 'admin' %}selected{% endif %}>Administrador</option>
         </select>
       </div>
+      <div class="form-group mb-2">
+        <label class="form-label">Acceso restringido a programa</label>
+        <select name="programa_acceso" class="form-control">
+          <option value="">— Acceso completo (todos los programas) —</option>
+          {% for p in programas %}
+          <option value="{{ p.codigo }}" {% if usuario and usuario.programa_acceso == p.codigo %}selected{% endif %}>
+            Solo {{ p.nombre }} ({{ p.codigo }})
+          </option>
+          {% endfor %}
+        </select>
+        <small class="text-muted">Si se selecciona un programa, el usuario solo verá datos de ese programa.</small>
+      </div>
       {% if usuario %}
       <div class="form-group mb-3">
         <label class="form-label">Estado</label>

@@ -172,6 +172,14 @@
             </select>
           </div>
           <div class="form-group" style="margin:0;">
+            <label class="form-label">Región</label>
+            <select id="inf-region" class="form-control" style="width:130px;">
+              <option value="">Todas</option>
+              <option value="AMBA">AMBA</option>
+              <option value="Interior">Interior</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0;">
             <label class="form-label">Institución beneficiaria</label>
             <select id="inf-ib2" class="form-control" style="width:190px;">
               <option value="">Todas</option>
@@ -290,6 +298,20 @@
         <div class="card-body"><div class="chart-wrap-lg"><canvas id="inf-chart-anio"></canvas></div></div>
       </div>
 
+      <!-- Distribución AMBA / Interior -->
+      <div id="inf-region-block" class="card mb-3" style="display:none;">
+        <div class="card-header">
+          <span class="card-title">Distribución AMBA / Interior</span>
+          <span class="text-sm text-muted">proyectos y ANR nominal</span>
+        </div>
+        <div class="card-body">
+          <div style="display:grid;grid-template-columns:220px 1fr;gap:24px;align-items:center;">
+            <div style="height:210px;"><canvas id="inf-chart-region"></canvas></div>
+            <table id="inf-tabla-region" style="font-size:13px;width:100%;border-collapse:collapse;"></table>
+          </div>
+        </div>
+      </div>
+
       <!-- Tabla resumen por programa -->
       <div class="card mb-3">
         <div class="card-header"><span class="card-title">Resumen por programa</span></div>
@@ -327,6 +349,7 @@
           <div class="form-group" style="margin:0;">
             <label class="form-label">Dimensión de análisis</label>
             <select id="an-dimension" class="form-control" style="width:220px;">
+              <option value="region">Región (AMBA/Interior)</option>
               <option value="municipio">Municipio</option>
               <option value="linea">Línea</option>
               <option value="area_tematica">Área temática</option>
@@ -428,6 +451,30 @@
 .col-badge { font-size:10px; padding:1px 5px; border-radius:3px; background:#EEF1F5;
              color:var(--text-muted); margin-left:auto; }
 
+/* ── Tabla resumen – filas expandibles por programa ── */
+.prog-toggle-btn {
+  background: none; border: none; cursor: pointer; padding: 2px 4px;
+  color: var(--text-muted); border-radius: 4px; vertical-align: middle;
+  display: inline-flex; align-items: center; transition: color .15s;
+}
+.prog-toggle-btn:hover { color: var(--primary); background: #EEF4FF; }
+.prog-toggle-btn .material-icons-round { font-size: 18px; transition: transform .2s; }
+.prog-toggle-btn[aria-expanded="true"] .material-icons-round { transform: rotate(90deg); }
+.prog-toggle-placeholder { display: inline-block; width: 28px; }
+.prog-detail-row > td { background: #F8FAFC; padding: 0 !important; }
+.prog-detail-inner { padding: 8px 16px 12px 44px; }
+.prog-detail-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.prog-detail-table thead th {
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--text-muted); padding: 4px 8px 6px; border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.prog-detail-table tbody td {
+  padding: 5px 8px; border-bottom: 1px solid var(--border, #EEF1F5); color: var(--text);
+}
+.prog-detail-table tbody tr:last-child td { border-bottom: none; }
+.prog-detail-table tbody tr:hover td { background: #EDF2FF; }
+
 /* ── Impresión ── */
 @media print {
   .no-print, .tabs, .tab-btn, nav, .sidebar, .topbar { display:none !important; }
@@ -472,7 +519,7 @@ function renderFilters(cols, progCodigo) {
   let html = '';
 
   for (const col of cols) {
-    if (!col.filterable || col.computed || col.ftype === 'estado') continue;
+    if (!col.filterable || col.ftype === 'estado') continue;
 
     html += `<div class="filter-section">
       <div class="filter-section-title">${col.label}</div>`;
@@ -625,6 +672,7 @@ async function generarInforme() {
   const anioHasta = document.getElementById('inf-anio-hasta').value;
   const estado = document.getElementById('inf-estado').value;
   const municipio = document.getElementById('inf-municipio').value;
+  const region = document.getElementById('inf-region').value;
   const ib2 = document.getElementById('inf-ib2').value;
 
   const params = new URLSearchParams();
@@ -633,6 +681,7 @@ async function generarInforme() {
   if (anioHasta) params.append('anio_hasta', anioHasta);
   if (estado) params.append('estado', estado);
   if (municipio) params.append('municipio', municipio);
+  if (region) params.append('region', region);
   if (ib2) params.append('ib2', ib2);
 
   const resp = await fetch('/api/reportes/datos?' + params);
@@ -749,6 +798,46 @@ async function generarInforme() {
     }
   });
 
+  // Chart: AMBA / Interior
+  const porRegion = d.por_region || [];
+  if (porRegion.length > 0) {
+    document.getElementById('inf-region-block').style.display = '';
+    if (_infCharts.region) _infCharts.region.destroy();
+    const regionPalette = { 'AMBA': '#006AC1', 'Interior': '#22A954' };
+    const regionColors = porRegion.map(r => regionPalette[r.region] || '#888');
+    _infCharts.region = new Chart(document.getElementById('inf-chart-region'), {
+      type: 'doughnut',
+      data: {
+        labels: porRegion.map(r => r.region),
+        datasets: [{ data: porRegion.map(r => r.n),
+                     backgroundColor: regionColors,
+                     borderWidth: 3, borderColor: '#fff' }]
+      },
+      options: { responsive: true, maintainAspectRatio: false, cutout: '55%',
+                 plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, padding: 10 } } } }
+    });
+    const totalN = porRegion.reduce((s, r) => s + r.n, 0);
+    const regionHead = `<thead><tr>
+      <th style="text-align:left;padding:6px 8px;border-bottom:2px solid var(--border);font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);">Región</th>
+      <th style="text-align:right;padding:6px 8px;border-bottom:2px solid var(--border);font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);">Proyectos</th>
+      <th style="text-align:right;padding:6px 8px;border-bottom:2px solid var(--border);font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);">ANR nominal</th>
+      <th style="text-align:right;padding:6px 8px;border-bottom:2px solid var(--border);font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);">%</th>
+    </tr></thead>`;
+    const regionBody = '<tbody>' + porRegion.map((r, i) =>
+      `<tr>
+        <td style="padding:8px 8px;border-bottom:1px solid var(--border);font-weight:600;">
+          <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${regionColors[i]};margin-right:7px;vertical-align:-1px;"></span>${r.region}
+        </td>
+        <td style="padding:8px 8px;border-bottom:1px solid var(--border);text-align:right;font-weight:600;">${r.n}</td>
+        <td style="padding:8px 8px;border-bottom:1px solid var(--border);text-align:right;">${fmtMonto(r.anr)}</td>
+        <td style="padding:8px 8px;border-bottom:1px solid var(--border);text-align:right;color:var(--text-muted);">${totalN ? Math.round(100*r.n/totalN) : 0}%</td>
+      </tr>`
+    ).join('') + '</tbody>';
+    document.getElementById('inf-tabla-region').innerHTML = regionHead + regionBody;
+  } else {
+    document.getElementById('inf-region-block').style.display = 'none';
+  }
+
   // Chart: municipios
   if (d.por_municipio && d.por_municipio.length > 0) {
     document.getElementById('inf-municipios-block').style.display = '';
@@ -798,17 +887,72 @@ async function generarInforme() {
 
   // Tabla resumen por programa
   const tbody = document.querySelector('#inf-tabla-prog tbody');
-  tbody.innerHTML = progs.map(p =>
-    `<tr>
-      <td><span class="tag" style="background:${p.color}22;border-color:${p.color}44;color:${p.color};">${p.codigo}</span>
-          <span class="text-sm" style="margin-left:6px;">${p.nombre}</span></td>
+  const proyPorProg = d.proyectos_por_programa || {};
+  const _estadoBadge = e => {
+    const cls = e === 'activo' ? 'badge-activo' : e === 'finalizado' ? 'badge-finalizado' : 'badge-suspendido';
+    const lbl = { activo:'Activo', finalizado:'Finalizado', suspendido:'Suspendido', en_evaluacion:'En evaluación' }[e] || e;
+    return `<span class="badge ${cls}">${lbl}</span>`;
+  };
+  let tbodyHtml = '';
+  progs.forEach(p => {
+    const proyectos = proyPorProg[String(p.id)] || [];
+    const hasProy   = proyectos.length > 0;
+    const detailId  = `prog-detail-${p.id}`;
+    tbodyHtml += `<tr class="prog-summary-row">
+      <td>
+        ${hasProy
+          ? `<button class="prog-toggle-btn" onclick="toggleProgDetail('${detailId}',this)" title="Ver proyectos" aria-expanded="false"><span class="material-icons-round">chevron_right</span></button>`
+          : '<span class="prog-toggle-placeholder"></span>'}
+        <span class="tag" style="background:${p.color}22;border-color:${p.color}44;color:${p.color};">${p.codigo}</span>
+        <span class="text-sm" style="margin-left:6px;">${p.nombre}</span>
+      </td>
       <td style="font-weight:600;">${p.total}</td>
       <td><span class="badge badge-activo">${p.activos}</span></td>
       <td><span class="badge badge-finalizado">${p.finalizados}</span></td>
       <td class="text-sm">${fmtMonto(p.anr_nominal)}</td>
       <td class="text-sm">${fmtMonto(p.anr_real)}</td>
-    </tr>`
-  ).join('');
+    </tr>`;
+    if (hasProy) {
+      const proyRows = proyectos.map(proy =>
+        `<tr>
+          <td>${proy.nombre || proy.beneficiario || '—'}</td>
+          <td class="text-sm text-muted">${proy.codigo || '—'}</td>
+          <td>${_estadoBadge(proy.estado)}</td>
+          <td class="text-sm">${proy.municipio || '—'}</td>
+          <td class="text-sm">${fmtMonto(proy.anr_monto)}</td>
+        </tr>`
+      ).join('');
+      tbodyHtml += `<tr id="${detailId}" class="prog-detail-row" style="display:none;">
+        <td colspan="6">
+          <div class="prog-detail-inner">
+            <table class="prog-detail-table">
+              <thead><tr>
+                <th>Proyecto / Beneficiario</th><th>Código</th>
+                <th>Estado</th><th>Municipio</th><th>ANR nominal</th>
+              </tr></thead>
+              <tbody>${proyRows}</tbody>
+            </table>
+          </div>
+        </td>
+      </tr>`;
+    }
+  });
+  tbody.innerHTML = tbodyHtml;
+}
+
+function toggleProgDetail(detailId, btn) {
+  const row      = document.getElementById(detailId);
+  const icon     = btn.querySelector('.material-icons-round');
+  const expanded = btn.getAttribute('aria-expanded') === 'true';
+  if (expanded) {
+    row.style.display = 'none';
+    icon.textContent  = 'chevron_right';
+    btn.setAttribute('aria-expanded', 'false');
+  } else {
+    row.style.display = '';
+    icon.textContent  = 'expand_more';
+    btn.setAttribute('aria-expanded', 'true');
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════

@@ -41,3 +41,8 @@ def can_edit():
 
 def is_admin():
     return session.get('rol') == 'admin'
+
+
+def get_programa_acceso():
+    """Devuelve el código de programa restringido (ej. 'FITBA') o None si tiene acceso total."""
+    return session.get('programa_acceso') or None

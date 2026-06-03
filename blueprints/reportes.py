@@ -19,6 +19,7 @@ COLUMNAS_META = OrderedDict([
     ('codigo',             {'label': 'Código',                 'filterable': True,  'ftype': 'text',         'default': True,  'progs': None}),
     ('estado',             {'label': 'Estado',                 'filterable': True,  'ftype': 'estado',       'default': True,  'progs': None}),
     ('municipio',          {'label': 'Municipio',              'filterable': True,  'ftype': 'dynamic',      'default': True,  'progs': None}),
+    ('region',             {'label': 'Región (AMBA/Interior)', 'filterable': True,  'ftype': 'dynamic',      'default': False, 'progs': None, 'computed': True}),
     ('localidad',          {'label': 'Localidad',              'filterable': False, 'ftype': None,           'default': False, 'progs': None}),
     ('anio',               {'label': 'Año',                    'filterable': True,  'ftype': 'anio',         'default': True,  'progs': ['FITBA','FONICS','ORBITA','CLIC']}),
     ('anio_aprobacion',    {'label': 'Año de aprobación',      'filterable': True,  'ftype': 'anio',         'default': False, 'progs': ['FITBA','FONICS']}),
@@ -215,16 +216,19 @@ def api_columnas():
 
         # Opciones para selects dinámicos
         if ftype == 'dynamic' and meta.get('filterable'):
-            where_parts = [f'{key} IS NOT NULL', f"{key} != ''"]
-            q_args = []
-            if programa_id:
-                where_parts.append('programa_id=?')
-                q_args.append(programa_id)
-            opts = query(
-                f"SELECT DISTINCT {key} FROM proyectos WHERE {' AND '.join(where_parts)} ORDER BY {key}",
-                q_args
-            )
-            col['options'] = [r[key] for r in opts]
+            if key == 'region':
+                col['options'] = ['AMBA', 'Interior']
+            else:
+                where_parts = [f'{key} IS NOT NULL', f"{key} != ''"]
+                q_args = []
+                if programa_id:
+                    where_parts.append('programa_id=?')
+                    q_args.append(programa_id)
+                opts = query(
+                    f"SELECT DISTINCT {key} FROM proyectos WHERE {' AND '.join(where_parts)} ORDER BY {key}",
+                    q_args
+                )
+                col['options'] = [r[key] for r in opts]
 
         # Rango para campos año
         if ftype == 'anio' and programa_id:
@@ -263,6 +267,7 @@ def api_datos():
     anio_hasta    = request.args.get('anio_hasta', '').strip()
     municipio_sel = request.args.get('municipio', '').strip()
     ib2_sel       = request.args.get('ib2', '').strip()
+    region_sel    = request.args.get('region', '').strip()
     dimension     = request.args.get('dimension', '')  # campo a analizar en tab Análisis
 
     # Construir WHERE base
@@ -291,6 +296,9 @@ def api_datos():
             " OR (pr.codigo IN ('ORBITA','CLIC') AND p.beneficiario=?))"
         )
         args.extend([ib2_sel, ib2_sel])
+    if region_sel in ('AMBA', 'Interior'):
+        where.append('p.municipio IN (SELECT nombre FROM municipios WHERE gba=?)')
+        args.append(1 if region_sel == 'AMBA' else 0)
 
     w = ' AND '.join(where)
 
@@ -337,6 +345,9 @@ def api_datos():
             else:
                 extra_where.append('proy.beneficiario=?')
             extra_args.append(ib2_sel)
+        if region_sel in ('AMBA', 'Interior'):
+            extra_where.append('proy.municipio IN (SELECT nombre FROM municipios WHERE gba=?)')
+            extra_args.append(1 if region_sel == 'AMBA' else 0)
         if has_ipc:
             real_expr = ipc_anr_expr(has_ipc, alias='proy')
             r = query(
@@ -404,37 +415,68 @@ def api_datos():
         f" WHERE pr.activo=1 GROUP BY pr.id", args
     )
 
+    # Por región (AMBA / Interior)
+    por_region = query(
+        f"SELECT CASE WHEN m.gba=1 THEN 'AMBA' ELSE 'Interior' END as region,"
+        f" COUNT(*) as n,"
+        f" COALESCE(SUM(p.anr_monto),0) as anr"
+        f" FROM proyectos p JOIN programas pr ON p.programa_id=pr.id"
+        f" LEFT JOIN municipios m ON m.nombre=p.municipio"
+        f" WHERE {w} GROUP BY 1 ORDER BY 1 DESC", args
+    )
+
     # Análisis por dimensión libre
     dimension_data = {}
     DIMENSIONES_VALIDAS = {
         'municipio', 'linea', 'area_tematica', 'sector_tema',
         'sector_actividad_1', 'tipo_beneficiario', 'tipo_adoptante',
         'seccion', 'rubro', 'situacion_clinica',
-        'anio', 'anio_aprobacion', 'estado',
+        'anio', 'anio_aprobacion', 'estado', 'region',
     }
     if dimension and dimension in DIMENSIONES_VALIDAS:
-        dim_field = f'COALESCE(p.{dimension},p.anio_aprobacion)' if dimension == 'anio' else f'p.{dimension}'
+        if dimension == 'region':
+            dim_field      = "(CASE WHEN m.gba=1 THEN 'AMBA' ELSE 'Interior' END)"
+            dim_from_ext   = " LEFT JOIN municipios m ON m.nombre=p.municipio"
+            dim_null_chk   = ''
+            dim_label      = 'Región (AMBA/Interior)'
+            dim_field_p    = "(CASE WHEN mr.gba=1 THEN 'AMBA' ELSE 'Interior' END)"
+            dim_from_ext_p = " LEFT JOIN municipios mr ON mr.nombre=proy.municipio"
+        elif dimension == 'anio':
+            dim_field      = 'COALESCE(p.anio,p.anio_aprobacion)'
+            dim_from_ext   = ''
+            dim_null_chk   = f" AND {dim_field} IS NOT NULL AND {dim_field}!=''"
+            dim_label      = COLUMNAS_META.get(dimension, {}).get('label', dimension)
+            dim_field_p    = 'COALESCE(proy.anio,proy.anio_aprobacion)'
+            dim_from_ext_p = ''
+        else:
+            dim_field      = f'p.{dimension}'
+            dim_from_ext   = ''
+            dim_null_chk   = f" AND {dim_field} IS NOT NULL AND {dim_field}!=''"
+            dim_label      = COLUMNAS_META.get(dimension, {}).get('label', dimension)
+            dim_field_p    = f'proy.{dimension}'
+            dim_from_ext_p = ''
+
         rows = query(
             f"SELECT {dim_field} as dim_val,"
             f" COUNT(*) as n,"
             f" COALESCE(SUM(p.anr_monto),0) as anr,"
             f" COALESCE(AVG(p.porcentaje_avance),0) as avance_prom"
-            f" FROM proyectos p JOIN programas pr ON p.programa_id=pr.id"
-            f" WHERE {w} AND {dim_field} IS NOT NULL AND {dim_field}!=''"
+            f" FROM proyectos p JOIN programas pr ON p.programa_id=pr.id{dim_from_ext}"
+            f" WHERE {w}{dim_null_chk}"
             f" GROUP BY 1 ORDER BY n DESC LIMIT 20", args
         )
         labels_dim = [r['dim_val'] for r in rows]
 
         # ANR real por valor de dimensión (agrega por programa con IPC propio)
         anr_real_dim = {lbl: 0.0 for lbl in labels_dim}
-        dim_field_proy = dim_field.replace('p.', 'proy.')
         for prog in programas_todos:
             if programa_ids and str(prog['id']) not in programa_ids:
                 continue
             ipc_join_d, has_ipc_d = build_ipc_join(None, ipc_fecha_val, programa_id=prog['id'], alias='proy')
             real_expr_d = ipc_anr_expr(has_ipc_d, alias='proy')
-            prog_where_d = [f'proy.programa_id={prog["id"]}',
-                            f'{dim_field_proy} IS NOT NULL', f"{dim_field_proy}!=''"]
+            prog_where_d = [f'proy.programa_id={prog["id"]}']
+            if dimension != 'region':
+                prog_where_d.extend([f'{dim_field_p} IS NOT NULL', f"{dim_field_p}!=''"])
             extra_args_d = []
             if estados_sel:
                 prog_where_d.append(f"proy.estado IN ({','.join('?'*len(estados_sel))})")
@@ -446,12 +488,15 @@ def api_datos():
             if municipio_sel:
                 prog_where_d.append('proy.municipio=?')
                 extra_args_d.append(municipio_sel)
+            if region_sel in ('AMBA', 'Interior'):
+                prog_where_d.append('proy.municipio IN (SELECT nombre FROM municipios WHERE gba=?)')
+                extra_args_d.append(1 if region_sel == 'AMBA' else 0)
             if ib2_sel:
                 prog_where_d.append('proy.ib2=?')
                 extra_args_d.append(ib2_sel)
             r_real_d = query(
-                f"SELECT {dim_field_proy} as dim_val, COALESCE(SUM({real_expr_d}),0) as anr_real"
-                f" FROM proyectos proy {ipc_join_d}"
+                f"SELECT {dim_field_p} as dim_val, COALESCE(SUM({real_expr_d}),0) as anr_real"
+                f" FROM proyectos proy {ipc_join_d}{dim_from_ext_p}"
                 f" WHERE {' AND '.join(prog_where_d)} GROUP BY 1",
                 extra_args_d
             )
@@ -461,7 +506,7 @@ def api_datos():
 
         dimension_data = {
             'campo':           dimension,
-            'label':           COLUMNAS_META.get(dimension, {}).get('label', dimension),
+            'label':           dim_label,
             'labels':          labels_dim,
             'values_n':        [r['n'] for r in rows],
             'values_anr':      [round(r['anr']) for r in rows],
@@ -473,17 +518,33 @@ def api_datos():
     hoy = datetime.now().strftime('%d/%m/%Y')
     resumen = _generar_resumen_ejecutivo(kpis, por_programa_list, hoy)
 
+    # Proyectos individuales por programa (filas expandibles en tabla resumen)
+    proyectos_detalle_rows = query(
+        f"SELECT p.id, p.programa_id, p.nombre, p.codigo, p.beneficiario,"
+        f" p.estado, p.municipio, COALESCE(p.anr_monto,0) as anr_monto"
+        f" FROM proyectos p JOIN programas pr ON p.programa_id=pr.id"
+        f" WHERE {w} ORDER BY p.nombre", args
+    )
+    proy_por_prog = {}
+    for proy in proyectos_detalle_rows:
+        pid = str(proy['programa_id'])
+        if pid not in proy_por_prog:
+            proy_por_prog[pid] = []
+        proy_por_prog[pid].append(dict(proy))
+
     return jsonify({
         'kpis':        kpis,
         'por_programa': por_programa_list,
         'por_estado':  [dict(r) for r in por_estado],
         'por_municipio': [dict(r) for r in por_municipio],
         'por_anio':    [dict(r) for r in por_anio],
+        'por_region':  [dict(r) for r in por_region],
         'avance_prog': [dict(r) for r in avance_prog],
         'dimension':   dimension_data,
         'ipc_fecha':   ipc_fecha_val,
         'resumen':     resumen,
         'generado':    hoy,
+        'proyectos_por_programa': proy_por_prog,
     })
 
 
@@ -516,6 +577,12 @@ def exportar():
         elif col == 'agente':
             select_parts.append("u.nombre || ' ' || u.apellido as _agente")
             col_labels['_agente'] = 'Agente'
+        elif col == 'region':
+            select_parts.append(
+                "(SELECT CASE WHEN gba=1 THEN 'AMBA' ELSE 'Interior' END"
+                " FROM municipios WHERE nombre=p.municipio LIMIT 1) as region"
+            )
+            col_labels['region'] = meta['label']
         else:
             select_parts.append(f'p.{col}')
             col_labels[col] = meta['label']
@@ -536,6 +603,10 @@ def exportar():
         args.append(programa_id)
 
     sql, args = _apply_dynamic_filters(sql, args, prog_codigo)
+    region_val = request.args.get('f_region', '').strip()
+    if region_val in ('AMBA', 'Interior'):
+        sql += ' AND p.municipio IN (SELECT nombre FROM municipios WHERE gba=?)'
+        args.append(1 if region_val == 'AMBA' else 0)
     sql += ' ORDER BY pr.nombre, p.nombre'
 
     proyectos = query(sql, args)

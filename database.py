@@ -505,6 +505,11 @@ def init_db():
         if col not in existing_muni_cols:
             cur.execute(f"ALTER TABLE municipios ADD COLUMN {col} {tipo}")
 
+    # ── Columnas incrementales en users ──────────────────────────────────────
+    existing_users_cols = {row[1] for row in cur.execute("PRAGMA table_info(users)").fetchall()}
+    if 'programa_acceso' not in existing_users_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN programa_acceso TEXT")
+
     # ── Columnas incrementales en ipc_config ─────────────────────────────────
     existing_ipc_cols = {row[1] for row in cur.execute("PRAGMA table_info(ipc_config)").fetchall()}
     if 'campo_monto' not in existing_ipc_cols:

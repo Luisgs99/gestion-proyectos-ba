@@ -1,6 +1,6 @@
-from flask import Blueprint, render_template, jsonify
+from flask import Blueprint, render_template, jsonify, session
 from database import query
-from helpers.auth import login_required
+from helpers.auth import login_required, get_programa_acceso
 from helpers.ipc import build_ipc_join, get_ipc_config, ipc_anr_expr
 
 bp = Blueprint('dashboard', __name__)
@@ -9,7 +9,11 @@ bp = Blueprint('dashboard', __name__)
 @bp.route('/dashboard')
 @login_required
 def dashboard():
-    programas = query("SELECT * FROM programas WHERE activo=1 ORDER BY id")
+    prog_acceso = get_programa_acceso()
+    if prog_acceso:
+        programas = query("SELECT * FROM programas WHERE activo=1 AND codigo=? ORDER BY id", (prog_acceso,))
+    else:
+        programas = query("SELECT * FROM programas WHERE activo=1 ORDER BY id")
     stats = {}
     for p in programas:
         total      = query("SELECT COUNT(*) as n FROM proyectos WHERE programa_id=?", (p['id'],), one=True)['n']
@@ -23,28 +27,56 @@ def dashboard():
         anr        = query(f"SELECT COALESCE(SUM({campo_monto}),0) as s FROM proyectos WHERE programa_id=?", (p['id'],), one=True)['s']
         stats[p['id']] = {'total': total, 'activos': activos, 'finalizados': finalizados, 'anr': anr, 'campo_monto': campo_monto}
 
-    total_proyectos  = query("SELECT COUNT(*) as n FROM proyectos", one=True)['n']
-    total_anr        = query("SELECT COALESCE(SUM(anr_monto),0) as s FROM proyectos", one=True)['s']
-    proyectos_activos= query("SELECT COUNT(*) as n FROM proyectos WHERE estado='activo'", one=True)['n']
+    if prog_acceso:
+        total_proyectos   = query("SELECT COUNT(*) as n FROM proyectos p JOIN programas pr ON p.programa_id=pr.id WHERE pr.codigo=?", (prog_acceso,), one=True)['n']
+        total_anr         = query("SELECT COALESCE(SUM(p.anr_monto),0) as s FROM proyectos p JOIN programas pr ON p.programa_id=pr.id WHERE pr.codigo=?", (prog_acceso,), one=True)['s']
+        proyectos_activos = query("SELECT COUNT(*) as n FROM proyectos p JOIN programas pr ON p.programa_id=pr.id WHERE p.estado='activo' AND pr.codigo=?", (prog_acceso,), one=True)['n']
+    else:
+        total_proyectos   = query("SELECT COUNT(*) as n FROM proyectos", one=True)['n']
+        total_anr         = query("SELECT COALESCE(SUM(anr_monto),0) as s FROM proyectos", one=True)['s']
+        proyectos_activos = query("SELECT COUNT(*) as n FROM proyectos WHERE estado='activo'", one=True)['n']
 
-    ultimas_novedades = query("""
-        SELECT n.*, p.nombre as proyecto_nombre, pr.codigo as programa_codigo, pr.color as programa_color,
-               u.nombre as agente_nombre, u.apellido as agente_apellido
-        FROM novedades n
-        JOIN proyectos p ON n.proyecto_id = p.id
-        JOIN programas pr ON p.programa_id = pr.id
-        LEFT JOIN users u ON n.registrado_por = u.id
-        ORDER BY n.created_at DESC LIMIT 8
-    """)
+    if prog_acceso:
+        ultimas_novedades = query("""
+            SELECT n.*, p.nombre as proyecto_nombre, pr.codigo as programa_codigo, pr.color as programa_color,
+                   u.nombre as agente_nombre, u.apellido as agente_apellido
+            FROM novedades n
+            JOIN proyectos p ON n.proyecto_id = p.id
+            JOIN programas pr ON p.programa_id = pr.id
+            LEFT JOIN users u ON n.registrado_por = u.id
+            WHERE pr.codigo=?
+            ORDER BY n.created_at DESC LIMIT 8
+        """, (prog_acceso,))
+    else:
+        ultimas_novedades = query("""
+            SELECT n.*, p.nombre as proyecto_nombre, pr.codigo as programa_codigo, pr.color as programa_color,
+                   u.nombre as agente_nombre, u.apellido as agente_apellido
+            FROM novedades n
+            JOIN proyectos p ON n.proyecto_id = p.id
+            JOIN programas pr ON p.programa_id = pr.id
+            LEFT JOIN users u ON n.registrado_por = u.id
+            ORDER BY n.created_at DESC LIMIT 8
+        """)
 
-    estados_data = query("SELECT estado, COUNT(*) as n FROM proyectos GROUP BY estado")
+    if prog_acceso:
+        estados_data = query("SELECT p.estado, COUNT(*) as n FROM proyectos p JOIN programas pr ON p.programa_id=pr.id WHERE pr.codigo=? GROUP BY p.estado", (prog_acceso,))
+    else:
+        estados_data = query("SELECT estado, COUNT(*) as n FROM proyectos GROUP BY estado")
 
-    por_programa = query("""
-        SELECT pr.id, pr.nombre, pr.codigo, pr.color,
-               COUNT(p.id) as n, COALESCE(SUM(p.anr_monto),0) as anr
-        FROM programas pr LEFT JOIN proyectos p ON p.programa_id = pr.id
-        WHERE pr.activo=1 GROUP BY pr.id
-    """)
+    if prog_acceso:
+        por_programa = query("""
+            SELECT pr.id, pr.nombre, pr.codigo, pr.color,
+                   COUNT(p.id) as n, COALESCE(SUM(p.anr_monto),0) as anr
+            FROM programas pr LEFT JOIN proyectos p ON p.programa_id = pr.id
+            WHERE pr.activo=1 AND pr.codigo=? GROUP BY pr.id
+        """, (prog_acceso,))
+    else:
+        por_programa = query("""
+            SELECT pr.id, pr.nombre, pr.codigo, pr.color,
+                   COUNT(p.id) as n, COALESCE(SUM(p.anr_monto),0) as anr
+            FROM programas pr LEFT JOIN proyectos p ON p.programa_id = pr.id
+            WHERE pr.activo=1 GROUP BY pr.id
+        """)
 
     ipc_meta      = query("SELECT clave, valor FROM configuracion WHERE clave LIKE 'ipc_%'")
     ipc_fecha_val = {r['clave']: r['valor'] for r in ipc_meta}.get('ipc_ultima_fecha', '2026-02')

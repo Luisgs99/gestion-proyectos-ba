@@ -19,10 +19,11 @@ def login():
         password = request.form.get('password', '')
         user = query("SELECT * FROM users WHERE email=? AND activo=1", (email,), one=True)
         if user and check_password_hash(user['password_hash'], password):
-            session['user_id'] = user['id']
-            session['nombre']  = f"{user['nombre']} {user['apellido']}"
-            session['rol']     = user['rol']
-            session['email']   = user['email']
+            session['user_id']         = user['id']
+            session['nombre']          = f"{user['nombre']} {user['apellido']}"
+            session['rol']             = user['rol']
+            session['email']           = user['email']
+            session['programa_acceso'] = user['programa_acceso']
             return redirect(url_for('dashboard.dashboard'))
         flash('Email o contraseña incorrectos.', 'danger')
     return render_template('auth/login.html')

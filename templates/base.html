@@ -32,15 +32,18 @@
       </div>
     </div>
 
+    {% set prog_acceso = session.get('programa_acceso') %}
+
     <div class="sidebar-section">
       <span class="sidebar-label">General</span>
       <a href="{{ url_for('dashboard.dashboard') }}" class="nav-item {% if request.endpoint == 'dashboard.dashboard' %}active{% endif %}" title="Dashboard">
         <span class="material-icons-round">dashboard</span>
         <span>Dashboard</span>
       </a>
-      <a href="{{ url_for('programas.list') }}" class="nav-item {% if 'programas.' in (request.endpoint or '') %}active{% endif %}" title="Programas">
+      <a href="{{ url_for('programas.list') }}" class="nav-item {% if 'programas.' in (request.endpoint or '') %}active{% endif %}"
+         title="{% if prog_acceso %}Programa {{ prog_acceso }}{% else %}Programas{% endif %}">
         <span class="material-icons-round">folder_special</span>
-        <span>Programas</span>
+        <span>{% if prog_acceso %}{{ prog_acceso }}{% else %}Programas{% endif %}</span>
       </a>
       <a href="{{ url_for('proyectos.list') }}" class="nav-item {% if 'proyectos.' in (request.endpoint or '') %}active{% endif %}" title="Proyectos">
         <span class="material-icons-round">rocket_launch</span>
@@ -50,6 +53,7 @@
         <span class="material-icons-round">account_balance</span>
         <span>Instituciones</span>
       </a>
+      {% if not prog_acceso %}
       <a href="{{ url_for('adoptantes.list') }}" class="nav-item {% if 'adoptantes.' in (request.endpoint or '') %}active{% endif %}" title="Adoptantes">
         <span class="material-icons-round">handshake</span>
         <span>Adoptantes</span>
@@ -58,8 +62,10 @@
         <span class="material-icons-round">account_tree</span>
         <span>Organigrama</span>
       </a>
+      {% endif %}
     </div>
 
+    {% if not prog_acceso %}
     <div class="sidebar-section">
       <span class="sidebar-label">Análisis</span>
       <a href="{{ url_for('reportes.index') }}" class="nav-item {% if request.endpoint in ('reportes.index','reportes.exportar') %}active{% endif %}" title="Reportes">
@@ -71,8 +77,9 @@
         <span>Actualiz. IPC</span>
       </a>
     </div>
+    {% endif %}
 
-    {% if is_admin() or can_edit() %}
+    {% if (is_admin() or can_edit()) and not prog_acceso %}
     <div class="sidebar-section">
       <span class="sidebar-label">Administración</span>
       {% if can_edit() %}
