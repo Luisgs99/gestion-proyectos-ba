@@ -79,6 +79,52 @@ COLUMN_MAPS = {
         'resumen'                      : 'resumen',
         'detalle'                      : 'detalle',
     },
+    # Pestaña "FONICS" del sheet "Resumen y seguimiento general FITBA…" (gid=1300000001).
+    # Misma estructura que FITBA, salvo: 'IB 1' (no 'IB'), sin 'ANR actualizado (índice MM)',
+    # y agrega 'CUIT adoptante' y 'REGION' (esta última sin columna en la DB, se ignora).
+    'FONICS': {
+        'codigo'                       : 'codigo',
+        'ano'                          : 'anio',
+        'linea'                        : 'linea',
+        'titulo del proyecto'          : 'nombre',
+        'ib 1'                         : 'beneficiario',
+        'ib 2'                         : 'ib2',
+        'adoptante'                    : 'adoptante',
+        'directora'                    : 'director',
+        'uvt'                          : 'uvt',
+        'municipio adoptante'          : 'municipio',
+        'anr'                          : 'anr_monto',
+        'anr actualizado'              : 'anr_actualizado',
+        'direccion'                    : 'direccion',
+        'latitud'                      : 'latitud',
+        'longitud'                     : 'longitud',
+        'seccion'                      : 'seccion',
+        'visitado'                     : 'visitado',
+        'n de visitas'                 : 'n_visitas',
+        'sector de actividad 1'        : 'sector_actividad_1',
+        'sector de actividad 2'        : 'sector_actividad_2',
+        'sector de actividad 3'        : 'sector_actividad_3',
+        'estado de ejecucion'          : 'estado',
+        'n reso'                       : 'n_reso',
+        'n de investigadores'          : 'n_investigadores',
+        'mujeres'                      : 'n_mujeres',
+        'directora mujer'              : 'directora_mujer',
+        'sector por tema proyecto'     : 'sector_tema',
+        'sector 2 por tema proyecto'   : 'sector_tema_2',
+        'referente'                    : 'referente',
+        'expediente seguimiento'       : 'expediente_seguimiento',
+        'expediente proyecto'          : 'expediente_proyecto',
+        'ita recibido'                 : 'ita_recibido',
+        'ita para subsanar'            : 'ita_subsanar',
+        'ita subsanado recibido con correcion': 'ita_subsanado',
+        'ita evaluacion lista'         : 'ita_evaluacion',
+        'ita firmado'                  : 'ita_firmado',
+        'itf presentado'               : 'itf_presentado',
+        'itf para subsanar'            : 'itf_subsanar',
+        'resumen'                      : 'resumen',
+        'detalle'                      : 'detalle',
+        'cuit adoptante'               : 'cuit',
+    },
     'CLINICA': {
         'id'                            : 'codigo',
         'cuit'                          : 'cuit',
@@ -415,6 +461,10 @@ def _run_sync(programa, col_map, campo_clave='codigo'):
                     sc = datos.get('situacion_clinica') or ''
                     datos['estado'] = 'finalizado' if sc == 'Publicado' else 'activo'
                     datos.setdefault('ib2', None)  # limpiar solo si no viene del sheet
+
+                # FONICS: "Estado de ejecución" suele venir vacío → 'activo' (evita NULL)
+                if programa['codigo'] == 'FONICS' and not datos.get('estado'):
+                    datos['estado'] = 'activo'
 
                 # Nombre obligatorio: si viene vacío, usar el valor clave
                 if not datos.get('nombre') or str(datos.get('nombre', '')).strip() in ('', 'nan'):
